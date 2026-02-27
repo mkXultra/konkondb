@@ -8,7 +8,8 @@
 | 02 | [インターフェース・コントラクト仕様](./02_interface_contracts.md) | ACL を越える型定義、Plugin Contract の関数シグネチャ | 確定 |
 | 03 | [データモデル設計](./03_data_model.md) | Raw DB（SQLite）の物理スキーマ、マイグレーション戦略 | 確定 |
 | 04 | [CLI 詳細設計](./04_cli_design.md) | CLI コマンド体系、終了コード、出力形式、エッジケース | 確定 |
-| 05 | Serving Adapters 設計 | REST API / MCP サーバーアダプターの詳細仕様 | 未着手 |
+| 05 | [プロジェクト構成・技術選定](./05_project_structure.md) | CLI フレームワーク、パッケージ構成、Python バージョン、配布方法 | TODO |
+| 06 | Serving Adapters 設計 | REST API / MCP サーバーアダプターの詳細仕様 | 未着手 |
 
 ## 原典資料
 
@@ -31,6 +32,7 @@ docs/design/
 ├── 02_interface_contracts.md      # 確定版
 ├── 03_data_model.md               # 確定版
 ├── 04_cli_design.md               # 確定版
+├── 05_project_structure.md        # TODO
 ├── claude/                        # Agent A ドラフト・レビュー（アーカイブ）
 ├── codex/                         # Agent B ドラフト・レビュー（アーカイブ）
 └── gemini/                        # Agent C ドラフト・レビュー（アーカイブ）
