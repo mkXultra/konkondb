@@ -59,6 +59,7 @@ class RawRecord:
     created_at: datetime         # UTC-aware な datetime
     content: str                  # PRDの通り、テキスト/JSON等の文字列データを想定
     meta: Mapping[str, JSONValue] = field(default_factory=dict)
+    updated_at: datetime | None = None  # UTC-aware; None → same as created_at
 
     @property
     def source_uri(self) -> str | None:
@@ -219,6 +220,8 @@ Pythonのループ内で `if record.created_at > last_build:` と書くと、毎
 - 引数は **UTC-aware な `datetime`** でなければならない。
 - フィルタリングは **exclusive**（`created_at > timestamp`、指定時刻を含まない）。
 - 返却順序は **決定的**: `ORDER BY created_at ASC, id ASC`。
+
+フレームワークの差分ビルド: `konkon build` はデフォルトで `.konkon/last_build` に記録された前回のビルド開始時刻を基に、`updated_at > last_build` でフィルタした `RawDataAccessor` を `build()` に渡す。チェックポイントにビルド完了時刻ではなく開始時刻を使用することで、ビルド実行中に発生した更新（insert / update）が次回ビルドで確実に拾われることを保証する。これにより、新規追加されたレコードだけでなく、更新されたレコードも差分ビルドの対象となる。`since()` メソッドは `created_at` ベースのまま維持され、プラグインが独自の差分ロジックを実装する場合に利用可能。
 
 > **将来の拡張:** `since()` は利便性優先のメソッドである。タイムスタンプの精度衝突が問題となる大規模運用では、opaque cursor ベースのアクセサ（`iter_records(after_cursor=...)` 等）を将来導入する可能性がある。
 

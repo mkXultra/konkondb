@@ -42,6 +42,7 @@ class RawRecord:
     created_at: datetime  # UTC-aware
     content: str
     meta: Mapping[str, JSONValue] = field(default_factory=dict)
+    updated_at: datetime | None = None  # UTC-aware; None → same as created_at
 
     @property
     def source_uri(self) -> str | None:

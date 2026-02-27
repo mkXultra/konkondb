@@ -23,6 +23,7 @@ from pathlib import Path
 KONKON_DIR = ".konkon"
 RAW_DB_NAME = "raw.db"
 PLUGIN_FILE = "konkon.py"
+LAST_BUILD_FILE = "last_build"
 
 PLUGIN_TEMPLATE = '''\
 """konkon plugin."""
@@ -92,3 +93,8 @@ def resolve_project(start: Path | None = None) -> Path:
 def raw_db_path(project_root: Path) -> Path:
     """Return the path to the Raw DB file under *project_root*/.konkon/."""
     return project_root / KONKON_DIR / RAW_DB_NAME
+
+
+def last_build_path(project_root: Path) -> Path:
+    """Return the path to the last_build timestamp file."""
+    return project_root / KONKON_DIR / LAST_BUILD_FILE

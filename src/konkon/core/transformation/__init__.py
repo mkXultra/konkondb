@@ -27,9 +27,11 @@ References:
 """
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 from konkon.core import ingestion
+from konkon.core.instance import last_build_path
 from konkon.core.models import QueryRequest, QueryResult
 from konkon.core.transformation.plugin_host import (
     invoke_build,
@@ -38,20 +40,56 @@ from konkon.core.transformation.plugin_host import (
 )
 
 
-def run_build(project_root: Path, *, plugin_path: Path | None = None) -> None:
+def _read_last_build(project_root: Path) -> datetime | None:
+    """Read the last build timestamp, or None if no build has been done."""
+    path = last_build_path(project_root)
+    if not path.exists():
+        return None
+    text = path.read_text().strip()
+    if not text:
+        return None
+    return datetime.fromisoformat(text.replace("Z", "+00:00"))
+
+
+def _write_last_build(project_root: Path, timestamp: datetime) -> None:
+    """Write the build checkpoint timestamp."""
+    path = last_build_path(project_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    utc_ts = timestamp.astimezone(timezone.utc)
+    path.write_text(utc_ts.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z")
+
+
+def run_build(
+    project_root: Path,
+    *,
+    full: bool = False,
+    plugin_path: Path | None = None,
+) -> None:
     """Load the user plugin and invoke build(raw_data).
 
     Orchestrates the data flow:
     1. Load and validate plugin (Plugin Contract, ACL #2)
     2. Get RawDataAccessor from Ingestion Context (ACL #1)
-    3. Set CWD to plugin directory (04_cli_design.md §3.6)
-    4. Invoke plugin.build(accessor)
+    3. Apply incremental filter unless full=True
+    4. Set CWD to plugin directory (04_cli_design.md §3.6)
+    5. Invoke plugin.build(accessor)
+    6. Record last_build timestamp on success
     """
     if plugin_path is None:
         plugin_path = project_root / "konkon.py"
 
     plugin = load_plugin(plugin_path)
-    accessor = ingestion.get_accessor(project_root)
+
+    # Record build start time BEFORE querying data — any updates that occur
+    # during the build will have updated_at >= build_start and will be picked
+    # up by the next incremental build (fixes checkpoint-skip bug).
+    build_start = datetime.now(timezone.utc)
+
+    # Incremental build: filter by updated_at > last_build
+    last_build = _read_last_build(project_root) if not full else None
+    accessor = ingestion.get_accessor(
+        project_root, modified_since=last_build
+    )
 
     # CWD guarantee: plugin runs in its own directory (§3.6)
     saved_cwd = os.getcwd()
@@ -60,6 +98,9 @@ def run_build(project_root: Path, *, plugin_path: Path | None = None) -> None:
         invoke_build(plugin, accessor)
     finally:
         os.chdir(saved_cwd)
+
+    # Record build start time (not completion time) as checkpoint
+    _write_last_build(project_root, build_start)
 
 
 def run_query(

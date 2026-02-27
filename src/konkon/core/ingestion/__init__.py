@@ -20,6 +20,7 @@ References:
 - 04_cli_design.md §4.2 (insert)
 """
 
+from datetime import datetime
 from pathlib import Path
 
 from konkon.core.ingestion.raw_db import RawDB
@@ -49,10 +50,38 @@ def ingest(
         db.close()
 
 
-def get_accessor(project_root: Path):
-    """Return a RawDataAccessor over all records in the Raw DB.
+def update(
+    record_id: str,
+    content: str | None,
+    meta: dict[str, JSONValue] | None,
+    project_root: Path,
+) -> RawRecord:
+    """Update an existing Raw Record's content and/or meta.
+
+    Raises KeyError if record_id is not found.
+    """
+    db = _open_raw_db(project_root)
+    try:
+        return db.update(record_id, content=content, meta=meta)
+    finally:
+        db.close()
+
+
+def get_accessor(
+    project_root: Path,
+    modified_since: datetime | None = None,
+):
+    """Return a RawDataAccessor over records in the Raw DB.
+
+    If *modified_since* is given, the accessor is pre-filtered to records
+    whose ``updated_at`` is after that timestamp (for incremental builds).
+    This keeps the ``modified_since()`` call inside Ingestion Context,
+    so Transformation Context never touches a non-Protocol method.
 
     The Raw DB must already exist (raises if not).
     """
     db = _open_raw_db(project_root)
-    return db.accessor()
+    accessor = db.accessor()
+    if modified_since is not None:
+        accessor = accessor.modified_since(modified_since)
+    return accessor

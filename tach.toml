@@ -73,7 +73,7 @@ depends_on = []
 [[modules]]
 path = "konkon.core.transformation"
 layer = "core"
-depends_on = ["konkon.core.transformation.plugin_host", "konkon.core.ingestion"]
+depends_on = ["konkon.core.transformation.plugin_host", "konkon.core.ingestion", "konkon.core.instance"]
 
 # Plugin Host — only transformation facade can access
 [[modules]]

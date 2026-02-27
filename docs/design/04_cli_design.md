@@ -3,10 +3,10 @@
 本ドキュメントは `konkon db` の CLI コマンド体系の詳細仕様を定義する。
 
 設計の前提:
-- `prd.md` のコマンド体系（help, init, insert, build, search, serve）
+- `prd.md` のコマンド体系（help, init, insert, update, build, search, serve）
 - `01_conceptual_architecture.md` の境界設計（Bounded Contexts / ACL）
 - `02_interface_contracts.md` の Plugin Contract（`build()`, `query()`, 型定義）
-- `03_data_model.md` の Raw DB スキーマ（UUID v7, RFC3339 UTC, append-only）
+- `03_data_model.md` の Raw DB スキーマ（UUID v7, RFC3339 UTC, DELETE なし）
 
 ---
 
@@ -40,7 +40,7 @@
 `01_conceptual_architecture.md` の C4 モデルで定義されている通り、**CLI はどの Bounded Context にも属さない「オーケストレーター」**である。
 
 ```text
-Developer ──▶ [konkon CLI] ──▶ Ingestion Context  (insert)
+Developer ──▶ [konkon CLI] ──▶ Ingestion Context  (insert, update)
                             ──▶ Transformation Context (build, search)
                             ──▶ Serving Context  (serve)
 ```
@@ -183,7 +183,7 @@ konkon help [COMMAND]
 
 | 引数 | 必須 | デフォルト | 説明 |
 | :--- | :--- | :--- | :--- |
-| `COMMAND` | No | — | ヘルプを表示するコマンド名（`init`, `insert`, `build`, `search`, `serve`） |
+| `COMMAND` | No | — | ヘルプを表示するコマンド名（`init`, `insert`, `update`, `build`, `search`, `serve`） |
 
 #### 振る舞い
 
@@ -379,7 +379,7 @@ Raw DB ファイル（`.konkon/raw.db`）が存在しない場合、`insert` コ
 - `id`: UUID v7 生成（`03` セクション 5 準拠）
 - `created_at`: RFC3339 UTC 固定長 27 文字（`03` セクション 6 準拠）
 - `meta` JSON の正規化（空オブジェクト `{}` → `NULL`、`json_valid` + `json_type='object'` の CHECK 制約に適合）
-- append-only（UPDATE / DELETE なし）
+- DELETE なし（MVP）
 - 内容重複の排除（dedup）は行わない
 
 ---
@@ -414,14 +414,11 @@ konkon build [OPTIONS]
 
 | オプション | 型 | デフォルト | 説明 |
 | :--- | :--- | :--- | :--- |
-| `--full` | flag | (デフォルト) | フルビルド。`build()` に全 Raw Record を渡す |
-| `--since` | `TIMESTAMP` | — | 指定時刻以降の Raw Record のみを渡す（差分ビルド） |
+| `--full` | flag | `false` | フルビルド。`build()` に全 Raw Record を渡す（デフォルト: 前回ビルド以降の変更分のみ） |
 | `--plugin` | `PATH` | `<project-dir>/konkon.py` | Plugin ファイルパス |
 | `--raw-db` | `PATH` | `<project-dir>/.konkon/raw.db` | Raw DB ファイルパス |
 
-`--since` が指定された場合、Plugin Host は `RawDataAccessor.since(timestamp)` を呼び出してフィルタ済みの Accessor を `build()` に渡す。`--since` のタイムスタンプは `Z` サフィックス付きの UTC でなければならない。タイムゾーンオフセット付き（`+09:00` 等）の入力は終了コード `2` (USAGE_ERROR) として拒否する。UTC への自動変換は行わない。
-
-`--full` と `--since` は排他。両方指定された場合は終了コード `2`。
+デフォルトの差分ビルド: `konkon build` は `.konkon/last_build` ファイルに記録された前回のビルド開始時刻と、各レコードの `updated_at` を比較し、変更されたレコードのみを `build()` に渡す。チェックポイントにビルド完了時刻ではなく開始時刻を使用することで、ビルド実行中に発生した更新が次回ビルドで取りこぼされることを防ぐ。初回ビルド（`last_build` ファイルが存在しない場合）は自動的にフルビルドとなる。`--full` を指定すると、すべてのレコードが渡される。
 
 #### Plugin Host の振る舞い
 
@@ -480,15 +477,15 @@ konkon build [OPTIONS]
 | :--- | :--- |
 | `0` | `build()` が正常に完了 |
 | `1` | 予期しないエラー（フレームワーク側） |
-| `2` | 引数エラー（`--since` 形式不正、非 UTC 等） |
+| `2` | 引数エラー |
 | `3` | `konkon.py` 未検出 / ロード失敗 / Contract 不適合 / Raw DB スキーマ不一致 |
 | `4` | `build()` 実行中のエラー（`BuildError` または Plugin 内の未捕捉例外） |
 
 #### 02/03 との整合性
 
 - `build(raw_data: RawDataAccessor) -> None` の契約に厳密に従う（sync/async 両対応）
-- `--since` は CLI 文字列入力を UTC-aware `datetime` に変換してから `RawDataAccessor.since()` に渡す
-- `since()` のセマンティクス（exclusive: `created_at > timestamp`、順序: `ORDER BY created_at ASC, id ASC`）を変更しない
+- 差分ビルドでは `.konkon/last_build` の時刻を基準に `updated_at` でフィルタする
+- Accessor の順序契約（`ORDER BY created_at ASC, id ASC`）を変更しない
 - Plugin に Raw DB 接続や `raw_records` テーブル名を露出しない（ACL #1）
 
 ---
@@ -786,6 +783,54 @@ Tool の引数は `QueryRequest` にマッピングされ、結果は `QueryResu
 
 ---
 
+### 4.6 `konkon update` — Raw Record の更新
+
+#### 概要
+
+既存の Raw Record の content や meta を更新する。
+
+#### Bounded Context の対応
+
+**Ingestion Context** を呼び出す。
+
+#### シグネチャ
+
+```
+konkon update [OPTIONS] RECORD_ID
+```
+
+#### 引数
+
+| 引数 | 必須 | 説明 |
+| :--- | :--- | :--- |
+| `RECORD_ID` | Yes | 更新対象の Raw Record の ID |
+
+#### オプション
+
+| オプション | 短縮形 | 型 | デフォルト | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `--content` | | `TEXT` | — | 新しい content |
+| `--meta` | `-m` | `KEY=VALUE` | — | meta に設定するキーと値。複数回指定可 |
+
+`--content` と `--meta` の少なくとも一方が必須。両方省略時は終了コード `2`。
+
+#### 振る舞い
+
+1. `RECORD_ID` に一致するレコードが存在しない場合、終了コード `1`
+2. 成功時、更新されたレコードの ID を stdout に出力
+3. `updated_at` が現在時刻に更新される
+
+#### 終了コード
+
+| コード | 条件 |
+| :--- | :--- |
+| `0` | 正常に更新 |
+| `1` | レコード未検出、一般エラー |
+| `2` | 引数エラー（`--content` も `--meta` もなし） |
+| `3` | プロジェクト未初期化 |
+
+---
+
 ## 5. コマンドと Bounded Context の対応一覧
 
 ### 5.1 Bounded Context 対応表
@@ -795,6 +840,7 @@ Tool の引数は `QueryRequest` にマッピングされ、結果は `QueryResu
 | `konkon help` | (なし — システムレベル) | ヘルプ表示 | — | — |
 | `konkon init` | (なし — システムレベル) | ファイルテンプレート生成 | — | — |
 | `konkon insert` | Ingestion Context | Raw Record の永続化 | **Write** | — |
+| `konkon update` | Ingestion Context | Raw Record の更新 | **Write** | — |
 | `konkon build` | Transformation Context → User Plugin | `build(raw_data)` | Read (via Accessor) | Write (Plugin 内部) |
 | `konkon search` | Transformation Context → User Plugin | `query(request)` | — | Read (Plugin 内部) |
 | `konkon serve api` | Serving → Transformation → User Plugin | `query(request)` (per request) | — | Read (Plugin 内部) |
@@ -870,7 +916,7 @@ Error: Raw DB schema version mismatch (expected: 2, found: 1). Please update kon
 | :--- | :--- |
 | `build()` と `query()` の両方が必須 | `build` / `search` / `serve` の Load 時に両関数の存在と呼び出し可能性を検証 → exit `3` |
 | `build(raw_data: RawDataAccessor)` | `build` コマンドが `RawDataAccessor` を構築して渡す |
-| `RawDataAccessor.since(timestamp)` | `build --since` オプションで差分 Accessor を渡す |
+| `RawDataAccessor.since(timestamp)` | デフォルトの差分ビルドで `.konkon/last_build` の時刻を基に差分 Accessor を渡す |
 | `query(request: QueryRequest)` | `search` の QUERY と `--param` / `--params-file` から `QueryRequest` を構築 |
 | `query()` の戻り値が `str \| QueryResult` | 両方に対応した出力正規化（text/json）。`None` は契約違反 → exit `5` |
 | sync / async 両対応 | Plugin Host が `iscoroutinefunction()` / `isawaitable()` で判定（セクション 3.6） |
@@ -889,11 +935,11 @@ Error: Raw DB schema version mismatch (expected: 2, found: 1). Please update kon
 | UUID v7 による `id` 生成 | `insert` コマンドがシステム側で UUID v7 を生成 |
 | RFC3339 UTC 固定長 27 文字 | `insert` コマンドが `created_at` を正規化して保存 |
 | `meta` は NULL または JSON オブジェクト（`json_valid` + `json_type='object'`） | CLI が `meta` を正規化して保存 |
-| append-only（UPDATE/DELETE なし） | MVP では `insert` のみを提供。削除・更新コマンドは設計しない |
+| DELETE なし（MVP） | MVP では `insert` と `update` を提供。削除コマンドは設計しない |
 | Raw DB の遅延作成 | 初回 `insert` 時に DDL を実行 |
 | PRAGMA 設定（WAL, busy_timeout 等） | DB 接続時に毎回セッション PRAGMA を設定 |
 | `PRAGMA user_version` 検証 | DB 接続時にスキーマバージョンを確認。既知差分は自動マイグレーション、未知差分は exit `3` |
-| `since()` の exclusive フィルタ | `build --since` が `created_at > timestamp` で実行される |
+| `since()` の exclusive フィルタ | 差分ビルドが `updated_at > last_build` で実行される |
 | `RawDataAccessor` の順序契約 | `ORDER BY created_at ASC, id ASC` を CLI / Accessor が保持 |
 
 ---
