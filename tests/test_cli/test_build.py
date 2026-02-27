@@ -41,6 +41,9 @@ class TestBuildCommand:
         _write_plugin(tmp_path, """\
 from konkon.core.models import BuildError
 
+def schema():
+    return {"description": "test", "params": {}}
+
 def build(raw_data):
     raise BuildError("vector store unreachable")
 
@@ -56,6 +59,9 @@ def query(request):
         runner = CliRunner()
         _init_project(runner, tmp_path)
         _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
 def query(request):
     return ""
 """)

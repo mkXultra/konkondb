@@ -30,6 +30,17 @@ PLUGIN_TEMPLATE = '''\
 from konkon.types import RawDataAccessor, QueryRequest, QueryResult
 
 
+def schema():
+    """Declare the query interface."""
+    return {
+        "description": "My konkon plugin",
+        "params": {},
+        "result": {
+            "description": "Query result",
+        },
+    }
+
+
 def build(raw_data: RawDataAccessor) -> None:
     """Transform raw data into AI-ready context."""
     pass

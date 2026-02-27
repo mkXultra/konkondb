@@ -22,6 +22,9 @@ class TestLoadPlugin:
     def test_loads_valid_plugin(self, tmp_path: Path):
         """Valid plugin with build() and query() loads successfully."""
         plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
 def build(raw_data):
     pass
 
@@ -36,6 +39,9 @@ def query(request):
     def test_raises_if_build_missing(self, tmp_path: Path):
         """Plugin missing build() raises error."""
         plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
 def query(request):
     return ""
 """)
@@ -45,6 +51,9 @@ def query(request):
     def test_raises_if_query_missing(self, tmp_path: Path):
         """Plugin missing query() raises error."""
         plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
 def build(raw_data):
     pass
 """)
@@ -59,6 +68,9 @@ def build(raw_data):
     def test_raises_if_build_not_callable(self, tmp_path: Path):
         """build defined as non-callable raises error."""
         plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
 build = 42
 
 def query(request):
@@ -75,6 +87,9 @@ class TestInvokeBuild:
         """invoke_build passes the accessor to plugin.build()."""
         plugin_path = _write_plugin(tmp_path, """\
 received = None
+
+def schema():
+    return {"description": "test", "params": {}}
 
 def build(raw_data):
     global received
@@ -93,6 +108,9 @@ def query(request):
         plugin_path = _write_plugin(tmp_path, """\
 from konkon.core.models import BuildError
 
+def schema():
+    return {"description": "test", "params": {}}
+
 def build(raw_data):
     raise BuildError("vector DB down")
 
@@ -106,6 +124,9 @@ def query(request):
     def test_unexpected_exception_wrapped(self, tmp_path: Path):
         """Non-KonkonError from plugin.build() is wrapped as BuildError."""
         plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
 def build(raw_data):
     raise KeyError("missing_key")
 
@@ -123,6 +144,9 @@ class TestInvokeQuery:
     def test_returns_string_result(self, tmp_path: Path):
         """invoke_query returns a string result from plugin.query()."""
         plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
 def build(raw_data):
     pass
 
@@ -138,6 +162,9 @@ def query(request):
         """invoke_query returns a QueryResult from plugin.query()."""
         plugin_path = _write_plugin(tmp_path, """\
 from konkon.core.models import QueryResult
+
+def schema():
+    return {"description": "test", "params": {}}
 
 def build(raw_data):
     pass
@@ -156,6 +183,9 @@ def query(request):
         plugin_path = _write_plugin(tmp_path, """\
 from konkon.core.models import QueryError
 
+def schema():
+    return {"description": "test", "params": {}}
+
 def build(raw_data):
     pass
 
@@ -170,6 +200,9 @@ def query(request):
     def test_unexpected_exception_wrapped(self, tmp_path: Path):
         """Non-KonkonError from plugin.query() is wrapped as QueryError."""
         plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
 def build(raw_data):
     pass
 

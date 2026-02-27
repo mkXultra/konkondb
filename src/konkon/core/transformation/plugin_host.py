@@ -34,7 +34,7 @@ from types import ModuleType
 # so this import is allowed.
 from konkon.core.models import BuildError, KonkonError, QueryError, QueryResult
 
-_REQUIRED_FUNCTIONS = ("build", "query")
+_REQUIRED_FUNCTIONS = ("build", "query", "schema")
 
 
 def load_plugin(path: Path) -> ModuleType:
@@ -52,15 +52,15 @@ def load_plugin(path: Path) -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    # Validate Plugin Contract: both build() and query() must exist and be callable
+    # Validate Plugin Contract: build(), query(), schema() must exist and be callable
     missing = [
         fn for fn in _REQUIRED_FUNCTIONS
         if not callable(getattr(module, fn, None))
     ]
     if missing:
         raise ValueError(
-            f"Plugin contract violation — {path.name} must define both "
-            f"'build()' and 'query()' functions. Missing: {', '.join(missing)}"
+            f"Plugin contract violation — {path.name} must define "
+            f"'build()', 'query()', and 'schema()' functions. Missing: {', '.join(missing)}"
         )
 
     return module

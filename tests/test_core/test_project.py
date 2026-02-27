@@ -21,6 +21,7 @@ class TestInitProject:
         plugin = tmp_path / PLUGIN_FILE
         assert plugin.is_file()
         content = plugin.read_text()
+        assert "def schema(" in content
         assert "def build(" in content
         assert "def query(" in content
 

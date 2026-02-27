@@ -22,6 +22,9 @@ class TestRunBuild:
     def test_succeeds_with_valid_plugin(self, tmp_path: Path):
         """run_build with a valid no-op plugin succeeds (returns None)."""
         _setup_project(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
 def build(raw_data):
     pass
 
@@ -38,6 +41,9 @@ def query(request):
         _setup_project(tmp_path, """\
 import json
 from pathlib import Path
+
+def schema():
+    return {"description": "test", "params": {}}
 
 def build(raw_data):
     records = list(raw_data)
@@ -64,6 +70,9 @@ def query(request):
         _setup_project(tmp_path, """\
 from konkon.core.models import BuildError
 
+def schema():
+    return {"description": "test", "params": {}}
+
 def build(raw_data):
     raise BuildError("db connection failed")
 
@@ -80,6 +89,9 @@ class TestRunQuery:
     def test_returns_string_result(self, tmp_path: Path):
         """run_query with plugin returning str returns the string."""
         _setup_project(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
 def build(raw_data):
     pass
 
@@ -94,6 +106,9 @@ def query(request):
         _setup_project(tmp_path, """\
 from konkon.core.models import QueryResult
 
+def schema():
+    return {"description": "test", "params": {}}
+
 def build(raw_data):
     pass
 
@@ -103,3 +118,23 @@ def query(request):
         result = run_query(tmp_path, "test")
         assert isinstance(result, QueryResult)
         assert result.content == "answer"
+
+    def test_passes_params_to_query_request(self, tmp_path: Path):
+        """run_query with params passes them in QueryRequest."""
+        _setup_project(tmp_path, """\
+import json
+from konkon.core.models import QueryResult
+
+def schema():
+    return {"description": "test", "params": {"limit": {"type": "integer"}}}
+
+def build(raw_data):
+    pass
+
+def query(request):
+    return QueryResult(content=json.dumps(dict(request.params)))
+""")
+        result = run_query(tmp_path, "hello", params={"limit": "10"})
+        assert isinstance(result, QueryResult)
+        import json
+        assert json.loads(result.content) == {"limit": "10"}

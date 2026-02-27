@@ -6,7 +6,7 @@
 
 開発者はプロジェクトのルートにある `konkon.py` に、以下の関数とロジックを実装します。これが「Transformation Context」と「User Plugin Logic」をつなぐ唯一の接点（ACL #2）となります。
 
-> **両関数の実装は必須。** Plugin Host はモジュールの Load 時に `build()` と `query()` の両関数の存在を検証し、欠けている場合は明確なエラーメッセージで起動を中断する。
+> **`build()`, `query()`, `schema()` の実装は必須。** Plugin Host はモジュールの Load 時に3関数の存在を検証し、欠けている場合は明確なエラーメッセージで起動を中断する。
 
 ```python
 from __future__ import annotations
@@ -133,6 +133,42 @@ class QueryResult:
 # 同期版:   def query(request: QueryRequest) -> str | QueryResult: ...
 # 非同期版: async def query(request: QueryRequest) -> str | QueryResult: ...
 
+# ---------------------------------------------------------
+# 3.1 スキーマ宣言 (Optional — Discovery / Introspection)
+# ---------------------------------------------------------
+# schema() は必須。CLI (konkon describe), MCP (tool 定義), REST API (OpenAPI) で
+# プラグインのインターフェースが自動的に公開される。
+
+def schema() -> dict[str, JSONValue]:
+    """
+    プラグインの query インターフェースを宣言する。
+
+    戻り値の形式は JSON Schema ベース:
+    {
+        "description": "プラグインの説明",
+        "params": {
+            "<param_name>": {
+                "type": "string" | "integer" | "number" | "boolean",
+                "description": "パラメータの説明",
+                "enum": [...],          # optional: 許可値のリスト
+                "default": ...,         # optional: デフォルト値
+            },
+        },
+        "result": {
+            "description": "結果の説明",
+            "metadata_keys": ["key1"],  # optional: metadata に含まれるキー
+        },
+    }
+
+    MCP 連携: params は MCP の tool.inputSchema にそのまま変換される。
+    MCP の tool.inputSchema に変換される。CLI (konkon describe) でも表示される。
+    """
+    pass
+
+# ---------------------------------------------------------
+# 3.2 ビルド関数 (Required)
+# ---------------------------------------------------------
+
 def build(raw_data: RawDataAccessor) -> None:
     """
     [Transform (Write) フェーズ]
@@ -142,6 +178,10 @@ def build(raw_data: RawDataAccessor) -> None:
     （konkon.py があるディレクトリ）に設定される。
     """
     pass
+
+# ---------------------------------------------------------
+# 3.3 クエリ関数 (Required)
+# ---------------------------------------------------------
 
 def query(request: QueryRequest) -> str | QueryResult:
     """

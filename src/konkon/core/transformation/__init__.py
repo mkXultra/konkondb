@@ -66,13 +66,14 @@ def run_query(
     project_root: Path,
     query_str: str,
     *,
+    params: dict[str, str] | None = None,
     plugin_path: Path | None = None,
 ) -> str | QueryResult:
     """Load the user plugin and invoke query(request).
 
     Orchestrates the data flow:
     1. Load and validate plugin (Plugin Contract, ACL #2)
-    2. Create QueryRequest from query_str
+    2. Create QueryRequest from query_str + params
     3. Set CWD to plugin directory (04_cli_design.md §3.6)
     4. Invoke plugin.query(request) and return result
     """
@@ -80,7 +81,7 @@ def run_query(
         plugin_path = project_root / "konkon.py"
 
     plugin = load_plugin(plugin_path)
-    request = QueryRequest(query=query_str)
+    request = QueryRequest(query=query_str, params=params or {})
 
     # CWD guarantee: plugin runs in its own directory (§3.6)
     saved_cwd = os.getcwd()

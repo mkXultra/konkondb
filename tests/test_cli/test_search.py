@@ -25,6 +25,9 @@ class TestSearchCommand:
         runner = CliRunner()
         _init_project(runner, tmp_path)
         _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
 def build(raw_data):
     pass
 
@@ -55,6 +58,12 @@ def query(request):
         _write_plugin(tmp_path, """\
 from konkon.core.models import QueryResult
 
+def schema():
+    return {"description": "test", "params": {}}
+
+def schema():
+    return {"description": "test", "params": {}}
+
 def build(raw_data):
     pass
 
@@ -65,12 +74,73 @@ def query(request):
         assert result.exit_code == 0
         assert "the answer" in result.output
 
+    def test_search_with_param_option(self, tmp_path: Path):
+        """konkon search -p limit=5 passes params to plugin."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        _write_plugin(tmp_path, """\
+import json
+
+def schema():
+    return {"description": "test", "params": {"limit": {"type": "integer"}}}
+
+def build(raw_data):
+    pass
+
+def query(request):
+    return json.dumps(dict(request.params))
+""")
+        result = runner.invoke(
+            main, ["-C", str(tmp_path), "search", "-p", "limit=5", "hello"]
+        )
+        assert result.exit_code == 0
+        assert '"limit": "5"' in result.output
+
+    def test_search_with_multiple_params(self, tmp_path: Path):
+        """konkon search -p k1=v1 -p k2=v2 passes all params."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        _write_plugin(tmp_path, """\
+import json
+
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data):
+    pass
+
+def query(request):
+    return json.dumps(dict(request.params), sort_keys=True)
+""")
+        result = runner.invoke(
+            main,
+            ["-C", str(tmp_path), "search", "-p", "a=1", "-p", "b=2", "hello"],
+        )
+        assert result.exit_code == 0
+        assert '"a": "1"' in result.output
+        assert '"b": "2"' in result.output
+
+    def test_search_bad_param_format_exit_2(self, tmp_path: Path):
+        """konkon search -p 'no-equals' → exit 2 (bad parameter)."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        result = runner.invoke(
+            main, ["-C", str(tmp_path), "search", "-p", "no-equals", "hello"]
+        )
+        assert result.exit_code == 2
+
     def test_search_query_error_exit_1(self, tmp_path: Path):
         """Plugin raising QueryError → exit 1 with error message."""
         runner = CliRunner()
         _init_project(runner, tmp_path)
         _write_plugin(tmp_path, """\
 from konkon.core.models import QueryError
+
+def schema():
+    return {"description": "test", "params": {}}
+
+def schema():
+    return {"description": "test", "params": {}}
 
 def build(raw_data):
     pass
