@@ -13,13 +13,21 @@ from konkon.cli import build, init, insert, search, serve
 
 
 @click.group(invoke_without_command=True, context_settings={"max_content_width": 120})
+@click.option(
+    "-C", "--project-dir",
+    type=click.Path(exists=False),
+    default=None,
+    help="Project root directory (default: auto-detect from cwd).",
+)
 @click.pass_context
-def main(ctx: click.Context) -> None:
+def main(ctx: click.Context, project_dir: str | None) -> None:
     """konkon db — Store raw data, transform with plugins, and serve AI-ready context.
 
     \b
     Workflow: init → insert → build → search
     """
+    ctx.ensure_object(dict)
+    ctx.obj["project_dir"] = project_dir
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 

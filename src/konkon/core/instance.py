@@ -58,10 +58,26 @@ def init_project(directory: Path, *, force: bool = False) -> None:
     plugin_path.write_text(PLUGIN_TEMPLATE)
 
 
-# TODO: Implement
-# - resolve_project(start: Path = Path.cwd()) -> Path
-#   - Walk up directories to find konkon.py
-#   - Return project root or raise error
-# - open_raw_db(project_root: Path) -> RawDB
-#   - Lazy: create .konkon/raw.db if not exists
-#   - Return RawDB instance
+def resolve_project(start: Path | None = None) -> Path:
+    """Walk up from *start* to find the project root (directory containing konkon.py).
+
+    Raises FileNotFoundError if konkon.py is not found up to the filesystem root.
+    Per 04_cli_design.md §3.4.
+    """
+    current = (start or Path.cwd()).resolve()
+    while True:
+        if (current / PLUGIN_FILE).exists():
+            return current
+        parent = current.parent
+        if parent == current:
+            raise FileNotFoundError(
+                f"Error: {PLUGIN_FILE} not found. "
+                "Run 'konkon init' to create a project, "
+                "or use '--project-dir' to specify the project root."
+            )
+        current = parent
+
+
+def raw_db_path(project_root: Path) -> Path:
+    """Return the path to the Raw DB file under *project_root*/.konkon/."""
+    return project_root / KONKON_DIR / RAW_DB_NAME
