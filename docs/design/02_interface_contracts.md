@@ -49,16 +49,26 @@ class QueryError(KonkonError):
 class RawRecord:
     """
     Raw DB から読み出された1件の生データ（frozen=True による浅いイミュータビリティ）。
-    DX向上のため、メタデータはネストさせずフラットに配置する。
+    `source_uri` / `content_type` は利便性の read-only property として提供される。
+    物理的には meta JSON のキーとして格納され、全メタデータは meta から参照できる。
 
     注意: frozen=True はトップレベルの属性への再代入を防ぐが、
     ネストされた dict 等の中身は変更可能（shallow immutability）。
     """
     id: str
-    source_uri: str | None       # データの出所（ファイルパス、URL等）。stdin等で不明な場合は None
     ingested_at: datetime         # UTC-aware な datetime
-    content_type: str | None     # MIME type 等。不明な場合は None
     content: str                  # PRDの通り、テキスト/JSON等の文字列データを想定
+    meta: Mapping[str, JSONValue] = field(default_factory=dict)
+
+    @property
+    def source_uri(self) -> str | None:
+        value = self.meta.get("source_uri")
+        return value if isinstance(value, str) else None
+
+    @property
+    def content_type(self) -> str | None:
+        value = self.meta.get("content_type")
+        return value if isinstance(value, str) else None
 
 class RawDataAccessor(Protocol):
     """
@@ -147,6 +157,8 @@ def query(request: QueryRequest) -> str | QueryResult:
     pass
 ```
 
+> **互換性注記:** `source_uri` / `content_type` は `RawRecord.meta` から投影される read-only property として維持される。
+
 ## 2. 設計の意図とベストプラクティス (DX と 安全性)
 
 ### 2.1 非同期 (Async) と同期 (Sync) の両対応
@@ -179,7 +191,7 @@ Context DB の中身はシステムから「不透明（Opaque）」であるた
 `build()` が Ctrl+C、サーバーシャットダウン、タイムアウト、`asyncio.CancelledError` 等により中断された場合、そのビルドは**失敗（またはキャンセル）**として扱われる。フレームワークによる Context Store のロールバックは一切行われない。開発者は 2.3 のアトミック更新パターンに従うことで、中断時にも Context Store の一貫性を保つことができる。
 
 ### 2.5 型安全性と ACL 境界の保護
-`QueryRequest.params` と `QueryResult.metadata` には `Mapping[str, JSONValue]` 型を使用し、`Any` を排除している。これにより:
+`QueryRequest.params` と `QueryResult.metadata` に加え `RawRecord.meta` には `Mapping[str, JSONValue]` 型を使用し、`Any` を排除している。これにより:
 - シリアライズ不可能なオブジェクト（DBセッション、例外オブジェクト等）の ACL 境界越えを型レベルで防止する。
 - CLI / REST API / MCP のいずれの出力フォーマットでも安全にレンダリング可能であることを保証する。
 - `Mapping`（`dict` ではなく）を使用することで、読み取り専用の意図を型で明示する。

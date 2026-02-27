@@ -96,13 +96,11 @@ Plugin はフレームワーク内で in-process 実行されるため、Plugin 
 | `3` | `CONFIG_ERROR` | プロジェクト未初期化、`konkon.py` の欠損・ロード失敗、Plugin Contract 不適合、Raw DB スキーマ不一致、サーバー起動失敗 |
 | `4` | `BUILD_ERROR` | `build()` 実行中のエラー（`BuildError` + Plugin 内未捕捉例外） |
 | `5` | `QUERY_ERROR` | `query()` 実行中のエラー（`QueryError` + Plugin 内未捕捉例外、戻り値型不正） |
-| `6` | `PARTIAL_FAILURE` | 部分成功（`ingest` で1件以上成功かつ1件以上失敗） |
 
 **設計根拠:**
 - `2` は UNIX 慣習（`sysexits.h` の `EX_USAGE` 相当）に従う
 - `02_interface_contracts.md` で `BuildError` / `QueryError` が明確に分離されている以上、CLI でも `4` / `5` で区別する
 - `3` は「Plugin のロジックのエラー」ではなく「プロジェクト構成・環境のエラー」を表す
-- `6` は「1件以上の成功と1件以上の失敗が混在」した場合のみ。全件失敗は `1` となる
 - `serve` 実行中の個々の `QueryError` はプロセス終了コードに直結しない（HTTP/MCP エラー応答に翻訳される）
 
 **SIGINT の扱い:**
@@ -266,88 +264,67 @@ Developer ──▶ CLI ──▶ Ingestion Context ──▶ Raw DB (INSERT)
 #### シグネチャ
 
 ```
-konkon ingest [OPTIONS] [FILE...]
-konkon ingest [OPTIONS] --stdin
+konkon ingest [OPTIONS] [TEXT]
 ```
 
 #### 引数
 
 | 引数 | 必須 | デフォルト | 説明 |
 | :--- | :--- | :--- | :--- |
-| `FILE...` | No* | — | 投入するファイルパス（複数指定可） |
-
-\* `FILE` も `--stdin` も指定されていない場合は終了コード `2`。
+| `TEXT` | No | — | 投入するテキスト（省略時は stdin から取得） |
 
 #### オプション
 
 | オプション | 短縮形 | 型 | デフォルト | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `--stdin` | | flag | `false` | 標準入力からデータを読み取る |
-| `--source-uri` | `-s` | `TEXT` | (自動推定) | `RawRecord.source_uri` を明示指定 |
-| `--content-type` | `-t` | `TEXT` | (自動推定) | `RawRecord.content_type` を明示指定 |
-| `--encoding` | | `TEXT` | `utf-8` | ファイル / 標準入力のデコード方式 |
-| `--continue-on-error` | | flag | `false` | 複数入力時に失敗をスキップして継続 |
-| `--atomic` | | flag | `false` | 複数入力を1トランザクションで処理 |
+| `--source-uri` | `-s` | `TEXT` | `NULL` | `meta.source_uri` に記録する。`--meta source_uri=...` のショートカット |
+| `--content-type` | `-t` | `TEXT` | `NULL` | `meta.content_type` に記録する。`-s` に拡張子があれば推定、なければ `NULL` |
+| `--meta` | `-m` | `KEY=VALUE` | — | `meta` JSON に任意のキーを追加。複数回指定可 |
+| `--encoding` | | `TEXT` | `utf-8` | 標準入力のデコード方式 |
 | `--raw-db` | | `PATH` | `<project-dir>/.konkon/raw.db` | Raw DB ファイルパス |
 
 **バリデーション:**
-- `--stdin` と `FILE...` は排他。両方指定された場合は終了コード `2`
-- `--continue-on-error` と `--atomic` は排他。両方指定された場合は終了コード `2`
-- `--source-uri` が指定された状態で複数 `FILE` が指定された場合は終了コード `2`（曖昧さの防止）
+- `TEXT` と stdin（非TTY）が同時に与えられた場合は終了コード `2`
+- 入力ソースの優先順位:
+  1. `TEXT` 引数がある場合は `TEXT` を `content` として使用
+  2. `TEXT` 引数がなく stdin が非TTYの場合は stdin を EOF まで読み取り使用
+  3. `TEXT` も stdin もない場合は終了コード `2`
+- `-s` / `-t` と `--meta` が同名キーで競合した場合は `-s` / `-t` を優先する
 
-#### ファイルからの投入
+#### 入力の受け取り
 
-- 各ファイルの内容が1つの `Raw Record` として保存される
-- `source_uri`: 明示指定がなければファイルの**絶対パス**
-- `content_type`: 明示指定がなければ拡張子から推定（`.json` → `application/json`, `.csv` → `text/csv`, `.md` → `text/markdown`, `.txt` → `text/plain`）。推定不能な場合は `NULL`
+- `konkon ingest` は **1回の実行で1レコード** を投入する
 - `id`: システムが UUID v7 を生成（`03_data_model.md` セクション 5 準拠）
 - `ingested_at`: 投入時刻を UTC で記録（RFC3339 固定長 27 文字、`03_data_model.md` セクション 6 準拠）
-
-#### 標準入力からの投入
-
-- `--stdin` 指定時、stdin を EOF まで読み取り、1つの `Raw Record` として保存
-- `source_uri`: 明示指定がなければ `NULL`
-- `content_type`: 明示指定がなければ `NULL`
-
-#### 複数ファイルの投入と失敗モード
-
-| モード | フラグ | 振る舞い | 終了コード（失敗時） |
-| :--- | :--- | :--- | :--- |
-| デフォルト | (なし) | 順次投入。最初のエラーで停止。投入済みレコードはコミット済み | `6`（1件以上成功後に失敗）/ `1`（最初のファイルで失敗） |
-| Best-effort | `--continue-on-error` | 順次投入。失敗をスキップして継続 | `6`（1件以上成功時）/ `1`（全件失敗時） |
-| Atomic | `--atomic` | 全ファイルを1トランザクションで投入。1件でも失敗時は全件ロールバック | `1` |
+- `meta` の組み立て:
+  - `--meta KEY=VALUE` で任意キーを追加（複数指定可）
+  - `-s/--source-uri` は `meta.source_uri` に設定
+  - `-t/--content-type` は `meta.content_type` に設定（未指定時は `-s` の拡張子から推定できる場合のみ設定）
 
 #### stdout 出力
 
-投入された各 `Raw Record` の情報を出力する。text フォーマットは簡潔さを優先し、`content_type` 等の詳細は省略する。全フィールドを確認するには `--format json` を使用する。
+投入された `Raw Record` の情報を出力する。text フォーマットは簡潔さを優先し、`meta` の詳細は省略する。全フィールドを確認するには `--format json` を使用する。
 
 **text フォーマット:**
 ```
-Ingested: 019516a0-3b40-7f8a-b12c-4e5f6a7b8c9d (notes.md)
-Ingested: 019516a0-3b41-7abc-def0-1234567890ab (data.csv)
+Ingested: 019516a0-3b40-7f8a-b12c-4e5f6a7b8c9d
 ```
 
-**json フォーマット (JSON Lines):**
+**json フォーマット:**
 ```json
-{"id": "019516a0-3b40-7f8a-b12c-4e5f6a7b8c9d", "source_uri": "/path/to/notes.md", "ingested_at": "2026-02-27T12:34:56.789012Z", "content_type": "text/markdown"}
-{"id": "019516a0-3b41-7abc-def0-1234567890ab", "source_uri": "/path/to/data.csv", "ingested_at": "2026-02-27T12:34:56.790000Z", "content_type": "text/csv"}
+{"id": "019516a0-3b40-7f8a-b12c-4e5f6a7b8c9d", "ingested_at": "2026-02-27T12:34:56.789012Z", "meta": {"source_uri": "/path/to/notes.md", "content_type": "text/markdown"}}
 ```
 
-JSON フォーマットは [JSON Lines](https://jsonlines.org/) (NDJSON) とする。1レコードにつき1行。
-
-**出力タイミング:**
-- **デフォルトおよび `--continue-on-error` モード**: 各レコードは投入完了時点で即座に出力される（ストリーミング）
-- **`--atomic` モード**: トランザクションのコミット完了後に全レコードを一括出力する。失敗時（ロールバック時）は stdout に何も出力しない。これによりパイプ先のデータ整合性を保護する
+JSON フォーマットは JSON オブジェクトを1行で出力する。
 
 #### 終了コード
 
 | コード | 条件 |
 | :--- | :--- |
-| `0` | すべてのファイルが正常に投入された |
-| `1` | 一般エラー（DB アクセス失敗、atomic モードでの失敗、最初のファイルでの失敗、`--continue-on-error` での全件失敗等） |
+| `0` | 正常に投入された |
+| `1` | 一般エラー（DB アクセス失敗、入力読み取り失敗等） |
 | `2` | 引数エラー |
 | `3` | プロジェクト未初期化、Raw DB スキーマ不一致 |
-| `6` | 部分成功（1件以上成功かつ1件以上失敗） |
 
 #### Raw DB の遅延作成
 
@@ -357,7 +334,7 @@ Raw DB ファイル（`.konkon/raw.db`）が存在しない場合、`ingest` コ
 
 - `id`: UUID v7 生成（`03` セクション 5 準拠）
 - `ingested_at`: RFC3339 UTC 固定長 27 文字（`03` セクション 6 準拠）
-- `source_uri` / `content_type` の空文字 → `NULL` 正規化（`03` の CHECK 制約に適合）
+- `meta` JSON の正規化（空オブジェクト `{}` → `NULL`、`json_valid` + `json_type='object'` の CHECK 制約に適合）
 - append-only（UPDATE / DELETE なし）
 - 内容重複の排除（dedup）は行わない
 
@@ -833,11 +810,8 @@ KeyError: 'missing_key'
 # query() が None を返した (exit 5)
 [ERROR] Plugin contract violation: query() returned None. Must return str or QueryResult.
 
-# ファイルが見つからない (exit 1)
-Error: File not found: data/missing.csv
-
 # Raw DB スキーマ不一致 (exit 3)
-Error: Raw DB schema version mismatch (expected: 1, found: 2). Please update konkon.
+Error: Raw DB schema version mismatch (expected: 2, found: 1). Please update konkon.
 ```
 
 ---
@@ -868,7 +842,7 @@ Error: Raw DB schema version mismatch (expected: 1, found: 2). Please update kon
 | :--- | :--- |
 | UUID v7 による `id` 生成 | `ingest` コマンドがシステム側で UUID v7 を生成 |
 | RFC3339 UTC 固定長 27 文字 | `ingest` コマンドが `ingested_at` を正規化して保存 |
-| `source_uri` / `content_type` の空文字 → NULL 正規化 | CLI が空文字入力を `NULL` に正規化 |
+| `meta` は NULL または JSON オブジェクト（`json_valid` + `json_type='object'`） | CLI が `meta` を正規化して保存 |
 | append-only（UPDATE/DELETE なし） | MVP では `ingest` のみを提供。削除・更新コマンドは設計しない |
 | Raw DB の遅延作成 | 初回 `ingest` 時に DDL を実行 |
 | PRAGMA 設定（WAL, busy_timeout 等） | DB 接続時に毎回セッション PRAGMA を設定 |
@@ -889,6 +863,5 @@ Error: Raw DB schema version mismatch (expected: 1, found: 2). Please update kon
 | `konkon serve api mcp` | API と MCP の同時起動 |
 | `konkon build --watch` | ファイル変更を監視して自動リビルド |
 | `konkon plugin validate` | Plugin Contract の事前検証（サーバー起動なし） |
-| `ingest --recursive` | ディレクトリ再帰走査による一括投入 |
 | `serve --query-timeout-ms` | リクエスト単位のタイムアウト設定 |
 | `ask` コマンド | `search` の UX 上位版（PRD で言及） |

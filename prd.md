@@ -25,8 +25,8 @@
 
 ### A. Raw Data 管理機能
 
-* `konkon ingest` コマンド等を通じて、任意のファイル（JSON, CSV, TXT）やテキストストリームをRaw DB（デフォルトはSQLite等を想定）に安全に格納する。
-* 投入ごとのメタデータ（追記日時、ソース名等）の自動管理。
+* `konkon ingest` コマンド等を通じて、任意のテキストデータ（stdin / コマンドライン引数経由）をRaw DB（デフォルトはSQLite等を想定）に安全に格納する。
+* 追記日時のシステム管理と、ユーザー定義メタデータ（JSON）の任意付与。
 
 ### B. 内部CRUDインターフェース (The Pluggable Engine)
 
@@ -53,7 +53,7 @@
 | コマンド | 役割 | 対象レイヤー・処理 |
 | --- | --- | --- |
 | `konkon init` | プロジェクト初期化（`konkon.py`テンプレート生成等） | 全体 |
-| `konkon ingest <file>` | 生データの投入 | Raw DBへの書き込み |
+| `konkon ingest [TEXT]` | 生データ（テキスト / stdin）の投入 | Raw DBへの書き込み |
 | `konkon build` | 開発者定義の `build()` を実行 | Internal Engine (C/U/D) |
 | `konkon search "query"` | 開発者定義の `query()` を実行し結果を確認 | Internal Engine (R) -> CLI出力 |
 | `konkon serve --api` | APIサーバー起動 | Internal Engine (R) -> HTTP |
