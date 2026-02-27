@@ -67,6 +67,25 @@ def update(
         db.close()
 
 
+def list_records(
+    project_root: Path,
+    limit: int = 20,
+) -> list[RawRecord]:
+    """Return up to *limit* recent records from the Raw DB (newest first).
+
+    Returns an empty list if the Raw DB file does not exist yet
+    (read-only command must not create the DB).
+    """
+    db_file = raw_db_path(project_root)
+    if not db_file.exists():
+        return []
+    db = _open_raw_db(project_root)
+    try:
+        return db.list_records(limit)
+    finally:
+        db.close()
+
+
 def get_accessor(
     project_root: Path,
     modified_since: datetime | None = None,

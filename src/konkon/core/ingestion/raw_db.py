@@ -322,6 +322,18 @@ class RawDB:
             updated_at=now,
         )
 
+    def list_records(self, limit: int) -> list[RawRecord]:
+        """Return up to *limit* records ordered by created_at DESC, id DESC.
+
+        Newest records first — suitable for ``konkon raw list`` display.
+        """
+        rows = self._conn.execute(
+            f"SELECT {_SELECT_COLS} FROM raw_records "
+            "ORDER BY created_at DESC, id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [_row_to_record(row) for row in rows]
+
     def accessor(self) -> SqliteRawDataAccessor:
         """Return a RawDataAccessor over all records."""
         return SqliteRawDataAccessor(self._conn)

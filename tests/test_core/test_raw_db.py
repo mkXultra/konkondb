@@ -606,3 +606,36 @@ class TestUnknownSchemaVersion:
 
         with pytest.raises(RuntimeError, match="schema version mismatch"):
             RawDB(db_path)
+
+
+# ---- list_records ----
+
+
+class TestRawDBListRecords:
+    """RawDB.list_records(limit) — return recent records newest first."""
+
+    def test_empty_db(self, raw_db: RawDB):
+        assert raw_db.list_records(10) == []
+
+    def test_returns_records_newest_first(self, raw_db: RawDB):
+        r1 = raw_db.insert(content="first")
+        time.sleep(0.01)
+        r2 = raw_db.insert(content="second")
+        time.sleep(0.01)
+        r3 = raw_db.insert(content="third")
+
+        records = raw_db.list_records(10)
+        assert [r.id for r in records] == [r3.id, r2.id, r1.id]
+
+    def test_respects_limit(self, raw_db: RawDB):
+        for i in range(5):
+            raw_db.insert(content=f"record-{i}")
+            time.sleep(0.01)
+
+        records = raw_db.list_records(3)
+        assert len(records) == 3
+
+    def test_limit_larger_than_count(self, raw_db: RawDB):
+        raw_db.insert(content="only")
+        records = raw_db.list_records(100)
+        assert len(records) == 1

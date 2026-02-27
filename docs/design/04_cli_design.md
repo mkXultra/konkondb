@@ -3,7 +3,7 @@
 本ドキュメントは `konkon db` の CLI コマンド体系の詳細仕様を定義する。
 
 設計の前提:
-- `prd.md` のコマンド体系（help, init, insert, update, build, search, serve）
+- `prd.md` のコマンド体系（help, init, insert, update, build, search, raw, serve）
 - `01_conceptual_architecture.md` の境界設計（Bounded Contexts / ACL）
 - `02_interface_contracts.md` の Plugin Contract（`build()`, `query()`, 型定義）
 - `03_data_model.md` の Raw DB スキーマ（UUID v7, RFC3339 UTC, DELETE なし）
@@ -183,7 +183,7 @@ konkon help [COMMAND]
 
 | 引数 | 必須 | デフォルト | 説明 |
 | :--- | :--- | :--- | :--- |
-| `COMMAND` | No | — | ヘルプを表示するコマンド名（`init`, `insert`, `update`, `build`, `search`, `serve`） |
+| `COMMAND` | No | — | ヘルプを表示するコマンド名（`init`, `insert`, `update`, `build`, `search`, `raw`, `serve`） |
 
 #### 振る舞い
 
@@ -831,6 +831,60 @@ konkon update [OPTIONS] RECORD_ID
 
 ---
 
+### 4.7 `konkon raw list` — Raw Record 一覧表示
+
+#### 概要
+
+Raw DB のレコード一覧を新しい順に表示する。デバッグ・運用向けの読み取り専用コマンド。
+
+#### Bounded Context の対応
+
+**Ingestion Context** を読み取り専用で呼び出す。Raw DB が存在しない場合は空の結果を返す（DB を新規作成しない）。
+
+#### シグネチャ
+
+```
+konkon raw list [OPTIONS]
+```
+
+#### オプション
+
+| オプション | 型 | デフォルト | 説明 |
+| :--- | :--- | :--- | :--- |
+| `--limit` | `INT` (>= 0) | `20` | 表示するレコードの最大数 |
+| `--format` | `text\|json` | (TTY 自動検出) | 出力フォーマット |
+
+#### stdout 出力
+
+**text フォーマット:**
+
+ヘッダー行 + 各レコードの ID、created_at、updated_at、content（先頭50文字に切り詰め）を表形式で出力する。
+
+**json フォーマット:**
+
+各レコードを JSON Lines（1行1オブジェクト）で出力する。content 全文と meta を含む。
+
+```json
+{"id": "...", "created_at": "...", "updated_at": "...", "content": "...", "meta": {}}
+```
+
+#### 振る舞い
+
+1. Raw DB ファイルが存在しない場合、何も出力せず正常終了（exit `0`）
+2. レコードが0件の場合も同様に何も出力せず正常終了（exit `0`）
+3. レコードは `created_at DESC, id DESC` の順序（新しいものが先）
+
+#### 終了コード
+
+| コード | 条件 |
+| :--- | :--- |
+| `0` | 正常（空結果も含む） |
+| `1` | 一般エラー（DB アクセス失敗等） |
+| `2` | 引数エラー（`--limit` に負値等） |
+| `3` | プロジェクト未初期化（`konkon.py` 未検出） |
+
+---
+
 ## 5. コマンドと Bounded Context の対応一覧
 
 ### 5.1 Bounded Context 対応表
@@ -841,6 +895,7 @@ konkon update [OPTIONS] RECORD_ID
 | `konkon init` | (なし — システムレベル) | ファイルテンプレート生成 | — | — |
 | `konkon insert` | Ingestion Context | Raw Record の永続化 | **Write** | — |
 | `konkon update` | Ingestion Context | Raw Record の更新 | **Write** | — |
+| `konkon raw list` | Ingestion Context | Raw Record の一覧取得 | **Read** | — |
 | `konkon build` | Transformation Context → User Plugin | `build(raw_data)` | Read (via Accessor) | Write (Plugin 内部) |
 | `konkon search` | Transformation Context → User Plugin | `query(request)` | — | Read (Plugin 内部) |
 | `konkon serve api` | Serving → Transformation → User Plugin | `query(request)` (per request) | — | Read (Plugin 内部) |
@@ -855,6 +910,7 @@ konkon update [OPTIONS] RECORD_ID
 | `help` | L1-L3 外 | ヘルプ表示のみ |
 | `init` | L1-L3 外 | ファイルシステム操作のみ |
 | `insert` | L1（Raw DB / Ingestion） | Raw Record 永続化 |
+| `raw list` | L1（Raw DB / Ingestion） | Raw Record 読み取り専用 |
 | `build` | L2（Orchestrator/Contract/Accessor）+ L1 + L3 | `build(raw_data)` 実行。L1 読み取り、L3 書き込み |
 | `search` | L2（Contract/Host）+ L3 | `query(request)` 実行。L3 読み取り |
 | `serve` | L3（Serving Adapter）+ L2 + L3 | サーバー起動。Adapter → Plugin Host → User Plugin |
@@ -951,7 +1007,7 @@ Error: Raw DB schema version mismatch (expected: 2, found: 1). Please update kon
 | 拡張 | 概要 |
 | :--- | :--- |
 | `konkon status` | Raw DB のレコード数、最終 insert 日時、Context Store の状態を表示 |
-| `konkon raw list` / `konkon raw get <id>` | Raw DB のレコード一覧・個別表示（デバッグ用） |
+| `konkon raw get <id>` | Raw DB の個別レコード表示（デバッグ用） |
 | `konkon serve api mcp` | API と MCP の同時起動 |
 | `konkon build --watch` | ファイル変更を監視して自動リビルド |
 | `konkon plugin validate` | Plugin Contract の事前検証（サーバー起動なし） |
