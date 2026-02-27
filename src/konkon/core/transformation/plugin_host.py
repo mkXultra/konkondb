@@ -15,14 +15,66 @@ ACL boundaries:
 - Receives RawDataAccessor from Ingestion Context (ACL #1, read-only)
 - Exposes Plugin Contract to User Plugin Logic (ACL #2)
 - Returns QueryResult to Serving Context (ACL #3)
+
+NOTE: This module MUST NOT import from konkon.core.ingestion or konkon.core.ingestion.raw_db.
+It receives RawDataAccessor as a parameter (protocol-based dependency).
 """
 
-# TODO: Implement per 02_interface_contracts.md
-# - load_plugin(path: Path) -> module
-#   - Validate build() and query() exist
-#   - Detect sync/async
-# - invoke_build(plugin, raw_data: RawDataAccessor) -> None
-#   - Catch KonkonError (clean message) vs unexpected (full traceback)
-# - invoke_query(plugin, request: QueryRequest) -> str | QueryResult
-#   - Catch KonkonError vs unexpected
-#   - For server mode: wrap sync query() in asyncio.to_thread()
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+from types import ModuleType
+
+# BuildError / KonkonError are in core.models which is a utility module
+# (depends_on=[] is about *this module's* declared deps in tach, but
+#  utility modules are importable by all — see tach.toml).
+# However, plugin_host has depends_on=[] in tach, meaning it cannot
+# import from any non-utility konkon module. core.models IS utility=true,
+# so this import is allowed.
+from konkon.core.models import BuildError, KonkonError
+
+_REQUIRED_FUNCTIONS = ("build", "query")
+
+
+def load_plugin(path: Path) -> ModuleType:
+    """Load a plugin module from *path* and validate the Plugin Contract.
+
+    The plugin must define callable ``build()`` and ``query()`` functions.
+    Raises ValueError if the contract is not satisfied.
+    Raises FileNotFoundError if the file does not exist.
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"Plugin file not found: {path}")
+
+    spec = importlib.util.spec_from_file_location("konkon_plugin", str(path))
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    # Validate Plugin Contract: both build() and query() must exist and be callable
+    missing = [
+        fn for fn in _REQUIRED_FUNCTIONS
+        if not callable(getattr(module, fn, None))
+    ]
+    if missing:
+        raise ValueError(
+            f"Plugin contract violation — {path.name} must define both "
+            f"'build()' and 'query()' functions. Missing: {', '.join(missing)}"
+        )
+
+    return module
+
+
+def invoke_build(plugin: ModuleType, raw_data: object) -> None:
+    """Call plugin.build(raw_data).
+
+    KonkonError subclasses (e.g. BuildError) propagate unchanged.
+    Other exceptions are wrapped as BuildError.
+    """
+    try:
+        plugin.build(raw_data)
+    except KonkonError:
+        raise
+    except Exception as exc:
+        raise BuildError(str(exc)) from exc

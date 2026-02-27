@@ -26,11 +26,38 @@ References:
 - 04_cli_design.md §4.3 (build), §4.4 (search)
 """
 
+import os
+from pathlib import Path
+
+from konkon.core import ingestion
+from konkon.core.transformation.plugin_host import invoke_build, load_plugin
+
+
+def run_build(project_root: Path, *, plugin_path: Path | None = None) -> None:
+    """Load the user plugin and invoke build(raw_data).
+
+    Orchestrates the data flow:
+    1. Load and validate plugin (Plugin Contract, ACL #2)
+    2. Get RawDataAccessor from Ingestion Context (ACL #1)
+    3. Set CWD to plugin directory (04_cli_design.md §3.6)
+    4. Invoke plugin.build(accessor)
+    """
+    if plugin_path is None:
+        plugin_path = project_root / "konkon.py"
+
+    plugin = load_plugin(plugin_path)
+    accessor = ingestion.get_accessor(project_root)
+
+    # CWD guarantee: plugin runs in its own directory (§3.6)
+    saved_cwd = os.getcwd()
+    try:
+        os.chdir(plugin_path.parent)
+        invoke_build(plugin, accessor)
+    finally:
+        os.chdir(saved_cwd)
+
+
 # TODO: Implement
-# - run_build(project_root: Path) -> None
-#   - Load plugin via plugin_host.py
-#   - Get RawDataAccessor from ingestion.py
-#   - Invoke plugin.build(raw_data)
 # - run_query(project_root: Path, query: str, params: dict | None) -> str | QueryResult
 #   - Load plugin via plugin_host.py
 #   - Create QueryRequest
