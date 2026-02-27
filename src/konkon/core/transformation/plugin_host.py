@@ -32,7 +32,7 @@ from types import ModuleType
 # However, plugin_host has depends_on=[] in tach, meaning it cannot
 # import from any non-utility konkon module. core.models IS utility=true,
 # so this import is allowed.
-from konkon.core.models import BuildError, KonkonError
+from konkon.core.models import BuildError, KonkonError, QueryError, QueryResult
 
 _REQUIRED_FUNCTIONS = ("build", "query")
 
@@ -78,3 +78,18 @@ def invoke_build(plugin: ModuleType, raw_data: object) -> None:
         raise
     except Exception as exc:
         raise BuildError(str(exc)) from exc
+
+
+def invoke_query(plugin: ModuleType, request: object) -> str | QueryResult:
+    """Call plugin.query(request) and return the result.
+
+    KonkonError subclasses (e.g. QueryError) propagate unchanged.
+    Other exceptions are wrapped as QueryError.
+    Returns str or QueryResult as-is from the plugin.
+    """
+    try:
+        return plugin.query(request)
+    except KonkonError:
+        raise
+    except Exception as exc:
+        raise QueryError(str(exc)) from exc

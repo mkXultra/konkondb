@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from konkon.core.instance import init_project
-from konkon.core.models import BuildError
-from konkon.core.transformation import run_build
+from konkon.core.models import BuildError, QueryResult
+from konkon.core.transformation import run_build, run_query
 
 
 def _setup_project(tmp_path: Path, plugin_code: str) -> Path:
@@ -72,3 +72,34 @@ def query(request):
 """)
         with pytest.raises(BuildError, match="db connection failed"):
             run_build(tmp_path)
+
+
+class TestRunQuery:
+    """run_query(project_root, query_str) — facade orchestration."""
+
+    def test_returns_string_result(self, tmp_path: Path):
+        """run_query with plugin returning str returns the string."""
+        _setup_project(tmp_path, """\
+def build(raw_data):
+    pass
+
+def query(request):
+    return "result for: " + request.query
+""")
+        result = run_query(tmp_path, "hello")
+        assert result == "result for: hello"
+
+    def test_returns_query_result(self, tmp_path: Path):
+        """run_query with plugin returning QueryResult returns it."""
+        _setup_project(tmp_path, """\
+from konkon.core.models import QueryResult
+
+def build(raw_data):
+    pass
+
+def query(request):
+    return QueryResult(content="answer")
+""")
+        result = run_query(tmp_path, "test")
+        assert isinstance(result, QueryResult)
+        assert result.content == "answer"

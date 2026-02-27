@@ -30,7 +30,12 @@ import os
 from pathlib import Path
 
 from konkon.core import ingestion
-from konkon.core.transformation.plugin_host import invoke_build, load_plugin
+from konkon.core.models import QueryRequest, QueryResult
+from konkon.core.transformation.plugin_host import (
+    invoke_build,
+    invoke_query,
+    load_plugin,
+)
 
 
 def run_build(project_root: Path, *, plugin_path: Path | None = None) -> None:
@@ -57,9 +62,30 @@ def run_build(project_root: Path, *, plugin_path: Path | None = None) -> None:
         os.chdir(saved_cwd)
 
 
-# TODO: Implement
-# - run_query(project_root: Path, query: str, params: dict | None) -> str | QueryResult
-#   - Load plugin via plugin_host.py
-#   - Create QueryRequest
-#   - Invoke plugin.query(request)
-#   - Return result
+def run_query(
+    project_root: Path,
+    query_str: str,
+    *,
+    plugin_path: Path | None = None,
+) -> str | QueryResult:
+    """Load the user plugin and invoke query(request).
+
+    Orchestrates the data flow:
+    1. Load and validate plugin (Plugin Contract, ACL #2)
+    2. Create QueryRequest from query_str
+    3. Set CWD to plugin directory (04_cli_design.md §3.6)
+    4. Invoke plugin.query(request) and return result
+    """
+    if plugin_path is None:
+        plugin_path = project_root / "konkon.py"
+
+    plugin = load_plugin(plugin_path)
+    request = QueryRequest(query=query_str)
+
+    # CWD guarantee: plugin runs in its own directory (§3.6)
+    saved_cwd = os.getcwd()
+    try:
+        os.chdir(plugin_path.parent)
+        return invoke_query(plugin, request)
+    finally:
+        os.chdir(saved_cwd)

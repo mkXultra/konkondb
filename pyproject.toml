@@ -29,3 +29,16 @@ dev = [
     "pytest>=8.0",
     "tach>=0.33.4",
 ]
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+commit_parser = "conventional"
+allow_zero_version = true
+build_command = """
+    uv lock --upgrade-package "$PACKAGE_NAME"
+    git add uv.lock
+    uv build
+"""
+
+[tool.semantic_release.branches.main]
+match = "main"

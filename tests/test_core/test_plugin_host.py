@@ -5,8 +5,8 @@ from types import ModuleType
 
 import pytest
 
-from konkon.core.models import BuildError
-from konkon.core.transformation.plugin_host import invoke_build, load_plugin
+from konkon.core.models import BuildError, QueryError, QueryResult
+from konkon.core.transformation.plugin_host import invoke_build, invoke_query, load_plugin
 
 
 def _write_plugin(path: Path, code: str) -> Path:
@@ -115,3 +115,68 @@ def query(request):
         module = load_plugin(plugin_path)
         with pytest.raises(BuildError, match="missing_key"):
             invoke_build(module, None)
+
+
+class TestInvokeQuery:
+    """invoke_query(plugin, request) — call plugin.query() with request."""
+
+    def test_returns_string_result(self, tmp_path: Path):
+        """invoke_query returns a string result from plugin.query()."""
+        plugin_path = _write_plugin(tmp_path, """\
+def build(raw_data):
+    pass
+
+def query(request):
+    return "found: " + request.query
+""")
+        from konkon.core.models import QueryRequest
+        module = load_plugin(plugin_path)
+        result = invoke_query(module, QueryRequest(query="hello"))
+        assert result == "found: hello"
+
+    def test_returns_query_result(self, tmp_path: Path):
+        """invoke_query returns a QueryResult from plugin.query()."""
+        plugin_path = _write_plugin(tmp_path, """\
+from konkon.core.models import QueryResult
+
+def build(raw_data):
+    pass
+
+def query(request):
+    return QueryResult(content="answer", metadata={"score": 0.9})
+""")
+        from konkon.core.models import QueryRequest
+        module = load_plugin(plugin_path)
+        result = invoke_query(module, QueryRequest(query="test"))
+        assert isinstance(result, QueryResult)
+        assert result.content == "answer"
+
+    def test_query_error_propagates(self, tmp_path: Path):
+        """QueryError from plugin.query() propagates unchanged."""
+        plugin_path = _write_plugin(tmp_path, """\
+from konkon.core.models import QueryError
+
+def build(raw_data):
+    pass
+
+def query(request):
+    raise QueryError("search failed")
+""")
+        from konkon.core.models import QueryRequest
+        module = load_plugin(plugin_path)
+        with pytest.raises(QueryError, match="search failed"):
+            invoke_query(module, QueryRequest(query="test"))
+
+    def test_unexpected_exception_wrapped(self, tmp_path: Path):
+        """Non-KonkonError from plugin.query() is wrapped as QueryError."""
+        plugin_path = _write_plugin(tmp_path, """\
+def build(raw_data):
+    pass
+
+def query(request):
+    raise RuntimeError("boom")
+""")
+        from konkon.core.models import QueryRequest
+        module = load_plugin(plugin_path)
+        with pytest.raises(QueryError, match="boom"):
+            invoke_query(module, QueryRequest(query="test"))
