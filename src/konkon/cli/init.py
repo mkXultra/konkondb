@@ -1,8 +1,11 @@
 """konkon init — Create a konkon project (system-level, no Bounded Context)."""
 
+import sys
 from pathlib import Path
 
 import click
+
+from konkon.core.instance import init_project
 
 
 def register(group: click.Group) -> None:
@@ -10,7 +13,7 @@ def register(group: click.Group) -> None:
     group.add_command(init)
 
 
-@click.command(short_help="Create a konkon project in the current directory [not implemented]")
+@click.command(short_help="Create a konkon project")
 @click.argument("directory", default=".", type=click.Path())
 @click.option("--force", is_flag=True, help="Overwrite existing konkon.py")
 def init(directory: str, force: bool) -> None:
@@ -19,6 +22,9 @@ def init(directory: str, force: bool) -> None:
     Generates konkon.py template and .konkon/ directory.
     Raw DB is NOT created here — it is lazily initialized on first insert.
     """
-    # TODO: Implement per 04_cli_design.md §4.1
-    # - Delegate to core/project.init_project(directory, force)
-    raise NotImplementedError
+    try:
+        init_project(Path(directory).resolve(), force=force)
+    except FileExistsError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    click.echo(f"Initialized konkon project in {Path(directory).resolve()}", err=True)

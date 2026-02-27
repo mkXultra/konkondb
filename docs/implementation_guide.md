@@ -10,14 +10,14 @@ src/konkon/
 ├── types.py                        # Public API re-export for plugin developers
 ├── cli/                            # CLI layer (orchestrator)
 │   ├── __init__.py                 #   click group + help command
-│   ├── init.py                     #   → core.project
+│   ├── init.py                     #   → core.instance
 │   ├── insert.py                   #   → core.ingestion
 │   ├── build.py                    #   → core.transformation
 │   ├── search.py                   #   → core.transformation
 │   └── serve.py                    #   → serving/
 ├── core/
 │   ├── models.py                   # Shared types (RawRecord, QueryRequest, etc.)
-│   ├── project.py                  # System-level project resolution (no BC)
+│   ├── instance.py                  # System-level project resolution (no BC)
 │   ├── ingestion/                  # Ingestion Context (BC)
 │   │   ├── __init__.py             #   Facade — public API
 │   │   └── raw_db.py              #   Internal — only facade can access
@@ -37,8 +37,8 @@ Configuration: `tach.toml`
 ### Layers (top → bottom)
 
 ```
-cli        → can import: core.project, core.ingestion, core.transformation, serving
-serving    → can import: core.transformation, core.project
+cli        → can import: core.instance, core.ingestion, core.transformation, serving
+serving    → can import: core.transformation, core.instance
 core       → cannot import cli or serving
 ```
 

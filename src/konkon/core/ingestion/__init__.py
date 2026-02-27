@@ -24,7 +24,7 @@ from konkon.core.models import JSONValue, RawRecord
 
 # TODO: Implement
 # - ingest(content: str, meta: dict[str, JSONValue] | None, project_root: Path) -> RawRecord
-#   - Open/create Raw DB via core/project.py (lazy init)
+#   - Open/create Raw DB via core/instance.py (lazy init)
 #   - Delegate to RawDB.insert()
 #   - Return RawRecord
 # - get_accessor(project_root: Path) -> RawDataAccessor

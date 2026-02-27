@@ -18,7 +18,7 @@ layers = ["cli", "serving", "core"]
 path = "konkon.cli"
 layer = "cli"
 depends_on = [
-    "konkon.core.project",
+    "konkon.core.instance",
     "konkon.core.ingestion",
     "konkon.core.transformation",
     "konkon.serving",
@@ -31,7 +31,7 @@ path = "konkon.serving"
 layer = "serving"
 depends_on = [
     "konkon.core.transformation",
-    "konkon.core.project",
+    "konkon.core.instance",
 ]
 
 # ─── Core Layer ─────────────────────────────────────────
@@ -52,7 +52,7 @@ depends_on = []
 
 # System-level project resolution (no Bounded Context)
 [[modules]]
-path = "konkon.core.project"
+path = "konkon.core.instance"
 layer = "core"
 depends_on = []
 
@@ -60,7 +60,7 @@ depends_on = []
 [[modules]]
 path = "konkon.core.ingestion"
 layer = "core"
-depends_on = ["konkon.core.ingestion.raw_db", "konkon.core.project"]
+depends_on = ["konkon.core.ingestion.raw_db", "konkon.core.instance"]
 
 # Raw DB driver — only ingestion facade can access
 [[modules]]
