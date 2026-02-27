@@ -27,4 +27,5 @@ testpaths = ["tests"]
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "tach>=0.33.4",
 ]

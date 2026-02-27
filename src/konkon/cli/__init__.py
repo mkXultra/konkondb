@@ -1,8 +1,15 @@
-"""CLI entry point for konkon."""
+"""CLI entry point for konkon.
+
+Each command is defined in its own module under cli/.
+This file only defines the top-level group and help command,
+then registers subcommands from their respective modules.
+"""
 
 import sys
 
 import click
+
+from konkon.cli import build, init, insert, search, serve
 
 
 @click.group(invoke_without_command=True, context_settings={"max_content_width": 120})
@@ -42,38 +49,9 @@ def help(ctx: click.Context, command: str | None) -> None:
     click.echo(cmd.get_help(sub_ctx))
 
 
-@main.command(short_help="Create a konkon project in the current directory [not implemented]")
-def init() -> None:
-    """Create a konkon project in the current directory."""
-    click.echo("Error: 'init' is not yet implemented.", err=True)
-    sys.exit(1)
-
-
-@main.command(short_help="Append text data to the Raw DB [not implemented]")
-def insert() -> None:
-    """Append text data to the Raw DB."""
-    click.echo("Error: 'insert' is not yet implemented.", err=True)
-    sys.exit(1)
-
-
-@main.command(
-    short_help="Transform Raw DB data via build() in konkon.py to produce AI-ready context [not implemented]"
-)
-def build() -> None:
-    """Transform Raw DB data via build() in konkon.py to produce AI-ready context."""
-    click.echo("Error: 'build' is not yet implemented.", err=True)
-    sys.exit(1)
-
-
-@main.command(short_help="Run query() in konkon.py and output results [not implemented]")
-def search() -> None:
-    """Run query() in konkon.py and output results."""
-    click.echo("Error: 'search' is not yet implemented.", err=True)
-    sys.exit(1)
-
-
-@main.command(short_help="Start a REST API or MCP server [not implemented]")
-def serve() -> None:
-    """Start a REST API or MCP server."""
-    click.echo("Error: 'serve' is not yet implemented.", err=True)
-    sys.exit(1)
+# Register subcommands from their modules
+init.register(main)
+insert.register(main)
+build.register(main)
+search.register(main)
+serve.register(main)

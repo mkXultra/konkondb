@@ -1,0 +1,83 @@
+# tach.toml — Module boundary enforcement for konkon db
+# Based on 01_conceptual_architecture.md Bounded Contexts
+#
+# Verify: uv run tach check
+# Layers (top → bottom): cli > serving > core
+# All cross-layer imports must be explicitly declared.
+
+source_roots = ["src"]
+exact = false  # TODO: set true after skeleton implementations are complete
+forbid_circular_dependencies = true
+layers_explicit_depends_on = true
+
+layers = ["cli", "serving", "core"]
+
+# ─── CLI Layer ──────────────────────────────────────────
+# Orchestrator — not part of any Bounded Context.
+[[modules]]
+path = "konkon.cli"
+layer = "cli"
+depends_on = [
+    "konkon.core.project",
+    "konkon.core.ingestion",
+    "konkon.core.transformation",
+    "konkon.serving",
+]
+
+# ─── Serving Layer ──────────────────────────────────────
+# Stateless protocol adapters. MUST NOT access Ingestion Context.
+[[modules]]
+path = "konkon.serving"
+layer = "serving"
+depends_on = [
+    "konkon.core.transformation",
+    "konkon.core.project",
+]
+
+# ─── Core Layer ─────────────────────────────────────────
+
+# Shared types — importable by all without declaration
+[[modules]]
+path = "konkon.core.models"
+layer = "core"
+utility = true
+depends_on = []
+
+# Public API re-export for plugin developers
+[[modules]]
+path = "konkon.types"
+layer = "core"
+utility = true
+depends_on = []
+
+# System-level project resolution (no Bounded Context)
+[[modules]]
+path = "konkon.core.project"
+layer = "core"
+depends_on = []
+
+# Ingestion Context facade
+[[modules]]
+path = "konkon.core.ingestion"
+layer = "core"
+depends_on = ["konkon.core.ingestion.raw_db", "konkon.core.project"]
+
+# Raw DB driver — only ingestion facade can access
+[[modules]]
+path = "konkon.core.ingestion.raw_db"
+layer = "core"
+visibility = ["konkon.core.ingestion"]
+depends_on = []
+
+# Transformation Context facade
+[[modules]]
+path = "konkon.core.transformation"
+layer = "core"
+depends_on = ["konkon.core.transformation.plugin_host", "konkon.core.ingestion"]
+
+# Plugin Host — only transformation facade can access
+[[modules]]
+path = "konkon.core.transformation.plugin_host"
+layer = "core"
+visibility = ["konkon.core.transformation"]
+depends_on = []

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from konkon.core.raw_db import RawDB
+from konkon.core.ingestion.raw_db import RawDB
 
 
 # ---- Fixtures ----
