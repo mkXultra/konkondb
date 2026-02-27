@@ -52,6 +52,7 @@
 
 | コマンド | 役割 | 対象レイヤー・処理 |
 | --- | --- | --- |
+| `konkon help [COMMAND]` | コマンド一覧・個別ヘルプの表示 | — |
 | `konkon init` | プロジェクト初期化（`konkon.py`テンプレート生成等） | 全体 |
 | `konkon insert [TEXT]` | 生データ（テキスト / stdin）の投入 | Raw DBへの書き込み |
 | `konkon build` | 開発者定義の `build()` を実行 | Internal Engine (C/U/D) |
