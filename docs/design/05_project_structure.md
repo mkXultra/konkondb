@@ -2,110 +2,121 @@
 
 本ドキュメントは `konkon db` の実装基盤に関する技術選定とプロジェクト構成を定義する。
 
-ステータス: **TODO（未着手）**
+ステータス: **確定（1〜5 選定済み / 6〜8 は後日選定）**
 
 ---
 
 ## 確定済み
 
-| 項目 | 決定内容 | 根拠 |
-| :--- | :--- | :--- |
-| 言語 | Python | PRD / concept.md |
-| DB | SQLite 3.38+ | 03_data_model.md（`json_valid()` に 3.38+ が必要） |
-| コマンド体系 | `help`, `init`, `insert`, `build`, `search`, `serve` | 04_cli_design.md |
-| Plugin 契約 | `build(raw_data: RawDataAccessor) -> None`, `query(request: QueryRequest) -> str \| QueryResult` | 02_interface_contracts.md |
-| Raw DB スキーマ | `raw_records` テーブル（`id`, `created_at`, `content`, `meta`） | 03_data_model.md |
-| 出力形式 | `text` / `json`、TTY 自動検出 | 04_cli_design.md |
+| # | 項目 | 決定内容 | 根拠 |
+| :--- | :--- | :--- | :--- |
+| — | 言語 | Python | PRD / concept.md |
+| — | DB | SQLite 3.38+ | 03_data_model.md（`json_valid()` に 3.38+ が必要） |
+| — | コマンド体系 | `help`, `init`, `insert`, `build`, `search`, `serve` | 04_cli_design.md（`ask` は MVP 外・将来拡張） |
+| — | Plugin 契約 | `build(raw_data: RawDataAccessor) -> None`, `query(request: QueryRequest) -> str \| QueryResult` | 02_interface_contracts.md |
+| — | Raw DB スキーマ | `raw_records` テーブル（`id`, `created_at`, `content`, `meta`） | 03_data_model.md |
+| — | 出力形式 | `text` / `json`、TTY 自動検出 | 04_cli_design.md |
+| 1 | CLI フレームワーク | `click` | サブコマンド構成との相性、`CliRunner` によるテスト容易性、Datasette 等の採用実績 |
+| 2 | プロジェクトマネージャ | `uv` | Rust 製で高速、ロックファイルあり、pip 互換、`uv run` で Poetry 相当の DX |
+| 3 | パッケージ構成 | src レイアウト | import 安全性（未インストール時の誤 import 防止） |
+| 4 | Python バージョン | 3.11+ | `tomllib` 標準搭載、Plugin 開発者の門戸を狭めすぎないバランス |
+| 5 | テストフレームワーク | `pytest` | デファクトスタンダード、`click.testing.CliRunner` との相性 |
 
 ---
 
-## 未決定（要選定）
+## エントリポイント
 
-### 1. CLI フレームワーク
+```toml
+[project.scripts]
+konkon = "konkon.cli:main"
+```
 
-`konkon` CLI のコマンドパーサ・ヘルプ生成・オプション処理に使用するライブラリ。
+`uv sync` により `.venv/bin/konkon` が生成され、`uv run konkon <command>` で実行可能。
 
-| 候補 | 概要 |
-| :--- | :--- |
-| `argparse` | 標準ライブラリ。依存ゼロ。機能は最小限 |
-| `click` | デコレータベース。豊富な機能。広く採用 |
-| `typer` | click ベース + 型ヒント駆動。モダン |
+---
 
-**選定観点:** 依存の少なさ、`--format` / TTY 自動検出の実装容易性、サブコマンド構成との相性
-
-### 2. プロジェクトマネージャ
-
-依存管理・仮想環境・ビルド・パブリッシュを担うツール。
-
-| 候補 | 概要 |
-| :--- | :--- |
-| `uv` | Rust 製。高速。pip/venv/pip-tools 互換 |
-| `poetry` | 依存解決・ロックファイル・パブリッシュ一体型 |
-| `pip` + `setuptools` | 標準。最小構成 |
-
-**選定観点:** 開発速度、CI との相性、ロックファイルの有無
-
-### 3. パッケージ構成
-
-`pyproject.toml` のプロジェクト定義とディレクトリレイアウト。
+## ディレクトリレイアウト
 
 ```
-# 候補 A: src レイアウト
-konkondb/
+konkondb/                       # プロジェクトルート (git root)
 ├── pyproject.toml
+├── uv.lock
 ├── src/
 │   └── konkon/
 │       ├── __init__.py
-│       ├── cli/
-│       ├── ingestion/
-│       ├── transformation/
-│       └── serving/
+│       ├── types.py            # 公開型の re-export (Plugin 開発者向け API)
+│       │                       #   RawDataAccessor, RawRecord,
+│       │                       #   QueryRequest, QueryResult,
+│       │                       #   KonkonError, BuildError, QueryError
+│       ├── cli/                # CLI層 (click)
+│       │   ├── __init__.py     #   main group + エントリポイント
+│       │   ├── help.py
+│       │   ├── init.py
+│       │   ├── insert.py
+│       │   ├── build.py
+│       │   ├── search.py
+│       │   └── serve.py        #   serve api / serve mcp サブコマンド
+│       ├── core/               # コアロジック (注1)
+│       │   ├── __init__.py
+│       │   ├── raw_db.py       #   Raw DB アクセス (RawDataAccessor 実装)
+│       │   ├── plugin_host.py  #   Plugin ロード・実行
+│       │   └── models.py       #   RawRecord, QueryRequest, QueryResult 等の定義
+│       └── serving/            # Serving層 (注2)
+│           ├── __init__.py
+│           ├── api.py          #   REST API サーバー
+│           └── mcp.py          #   MCP サーバー
 └── tests/
-
-# 候補 B: フラットレイアウト
-konkondb/
-├── pyproject.toml
-├── konkon/
-│   ├── __init__.py
-│   ├── cli/
-│   └── ...
-└── tests/
+    ├── conftest.py
+    ├── test_cli/
+    ├── test_core/
+    └── test_serving/
 ```
 
-**選定観点:** src レイアウトの import 安全性 vs フラットの簡潔さ
+参考: [Datasette](https://github.com/simonw/datasette) — SQLite ベースの CLI + API サーバー (click 採用)
 
-### 4. Python バージョン要件
+### 注1: `core/` パッケージと Bounded Context
 
-| 候補 | 根拠 |
-| :--- | :--- |
-| 3.11+ | `tomllib` 標準搭載、`TaskGroup`、パフォーマンス改善 |
-| 3.12+ | 型ヒント改善（`type` 文）、f-string の制約緩和 |
-| 3.13+ | 最新。Free-threaded mode（実験的） |
+`core/` には Ingestion Context（`raw_db.py`）と Transformation Context（`plugin_host.py`）が同居している。01_conceptual_architecture.md で定義された Bounded Context の分離は、パッケージ分割ではなくモジュール間の import 規約で担保する:
 
-**選定観点:** Plugin 開発者の環境を狭めすぎないバランス
+- `plugin_host.py` は `raw_db.py` の内部実装（SQL、テーブル名等）に直接依存してはならない
+- 両者間のデータ受け渡しは `RawDataAccessor` プロトコル（ACL #1）を経由する
 
-### 5. テストフレームワーク
+ファイル数の増加に伴い `core/` を `ingestion/` + `transformation/` に分割する可能性がある。
 
-| 候補 | 概要 |
-| :--- | :--- |
-| `pytest` | デファクトスタンダード。fixture、パラメタライズ |
-| `unittest` | 標準ライブラリ。依存ゼロ |
+### 注2: `serving/` パッケージの確定範囲
 
-**選定観点:** CLI の統合テスト（subprocess / click.testing）との相性
+`serving/` のディレクトリ名とファイル名（`api.py`, `mcp.py`）は仮確定。01_conceptual_architecture.md の Serving Context に対応し、ステートレスなプロトコルアダプターとして機能する。内部で使用する HTTP フレームワーク（7. Serving 実装）と MCP SDK（8. MCP SDK）は未選定であり、06_serving_adapters.md の設計時に確定する。
+
+### Plugin 開発者の公開 API (`konkon.types`)
+
+`types.py` は `core/models.py` で定義された型と例外を re-export する薄いモジュール。Plugin 開発者は以下のインポートパスを使用する（04_cli_design.md の `konkon init` テンプレートと一致）:
+
+```python
+from konkon.types import RawDataAccessor, QueryRequest, QueryResult
+from konkon.types import BuildError, QueryError
+```
+
+内部実装の配置（`core/models.py`）が変更されても、`konkon.types` の公開 API は安定する。
+
+---
+
+## 未決定（後日選定）
+
+以下は `konkon serve` の実装時に選定する。06_serving_adapters.md と合わせて決定予定。
 
 ### 6. 配布方法
 
 | 候補 | 概要 |
 | :--- | :--- |
 | PyPI + `pip install konkondb` | 標準。最も広い到達範囲 |
-| PyPI + `pipx install konkondb` | CLI ツール向け。環境汚染なし |
+| PyPI + `pipx install konkondb` / `uv tool install konkondb` | CLI ツール向け。環境汚染なし |
 | Homebrew | macOS 向け。tap 運用が必要 |
 
 **選定観点:** ターゲットユーザー（AI エンジニア / データエンジニア）の環境
 
 ### 7. Serving 実装
 
-REST API / MCP サーバーの HTTP フレームワーク。06_serving_adapters.md で詳細設計予定。
+REST API / MCP サーバーの HTTP フレームワーク。
 
 | 候補 | 概要 |
 | :--- | :--- |
@@ -114,8 +125,6 @@ REST API / MCP サーバーの HTTP フレームワーク。06_serving_adapters.
 | `http.server` | 標準ライブラリ。依存ゼロ。機能最小限 |
 
 ### 8. MCP SDK
-
-MCP (Model Context Protocol) サーバーの実装に使用するライブラリ。
 
 | 候補 | 概要 |
 | :--- | :--- |
@@ -126,6 +135,7 @@ MCP (Model Context Protocol) サーバーの実装に使用するライブラリ
 
 ## 次のアクション
 
-1. 上記 8 項目を選定する
-2. `pyproject.toml` を作成する
-3. 06_serving_adapters.md の設計に進む
+1. ~~上記 8 項目を選定する~~ → 1〜5 選定済み
+2. `pyproject.toml` を作成し、プロジェクト骨格をセットアップする
+3. CLI (help / init / insert) を実装する
+4. 06_serving_adapters.md の設計に進む（serve 実装時に 6〜8 を選定）
