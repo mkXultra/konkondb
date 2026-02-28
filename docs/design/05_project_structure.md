@@ -12,9 +12,9 @@
 | :--- | :--- | :--- | :--- |
 | — | 言語 | Python | PRD / concept.md |
 | — | DB | SQLite 3.38+ | 03_data_model.md（`json_valid()` に 3.38+ が必要） |
-| — | コマンド体系 | `help`, `init`, `insert`, `build`, `search`, `serve` | 04_cli_design.md（`ask` は MVP 外・将来拡張） |
+| — | コマンド体系 | `help`, `init`, `insert`, `update`, `build`, `search`, `raw`, `serve` | 04_cli_design.md（`ask` は MVP 外・将来拡張） |
 | — | Plugin 契約 | `build(raw_data: RawDataAccessor) -> None`, `query(request: QueryRequest) -> str \| QueryResult` | 02_interface_contracts.md |
-| — | Raw DB スキーマ | `raw_records` テーブル（`id`, `created_at`, `content`, `meta`） | 03_data_model.md |
+| — | Raw DB スキーマ | `raw_records` テーブル（`id`, `created_at`, `updated_at`, `content`, `meta`） | 03_data_model.md |
 | — | 出力形式 | `text` / `json`、TTY 自動検出 | 04_cli_design.md |
 | 1 | CLI フレームワーク | `click` | サブコマンド構成との相性、`CliRunner` によるテスト容易性、Datasette 等の採用実績 |
 | 2 | プロジェクトマネージャ | `uv` | Rust 製で高速、ロックファイルあり、pip 互換、`uv run` で Poetry 相当の DX |
@@ -50,18 +50,24 @@ konkondb/                       # プロジェクトルート (git root)
 │       │                       #   KonkonError, BuildError, QueryError
 │       ├── cli/                # CLI層 (click)
 │       │   ├── __init__.py     #   main group + エントリポイント
-│       │   ├── help.py
 │       │   ├── init.py
 │       │   ├── insert.py
+│       │   ├── update.py
 │       │   ├── build.py
 │       │   ├── search.py
+│       │   ├── raw.py          #   raw サブコマンドグループ (raw list 等)
 │       │   └── serve.py        #   serve api / serve mcp サブコマンド
-│       ├── core/               # コアロジック (注1)
+│       ├── core/               # コアロジック
 │       │   ├── __init__.py
-│       │   ├── raw_db.py       #   Raw DB アクセス (RawDataAccessor 実装)
-│       │   ├── plugin_host.py  #   Plugin ロード・実行
-│       │   └── models.py       #   RawRecord, QueryRequest, QueryResult 等の定義
-│       └── serving/            # Serving層 (注2)
+│       │   ├── models.py       #   RawRecord, QueryRequest, QueryResult 等の定義
+│       │   ├── instance.py     #   プロジェクトルート解決、パス定数
+│       │   ├── ingestion/      #   Ingestion Context (Raw DB)
+│       │   │   ├── __init__.py #     facade (ingest, update, list_records, get_accessor)
+│       │   │   └── raw_db.py   #     Raw DB アクセス (RawDataAccessor 実装)
+│       │   └── transformation/ #   Transformation Context (Plugin Host)
+│       │       ├── __init__.py #     facade (run_build, run_query)
+│       │       └── plugin_host.py  # Plugin ロード・実行
+│       └── serving/            # Serving層 (注1)
 │           ├── __init__.py
 │           ├── api.py          #   REST API サーバー
 │           └── mcp.py          #   MCP サーバー
@@ -74,16 +80,20 @@ konkondb/                       # プロジェクトルート (git root)
 
 参考: [Datasette](https://github.com/simonw/datasette) — SQLite ベースの CLI + API サーバー (click 採用)
 
-### 注1: `core/` パッケージと Bounded Context
+### `core/` パッケージと Bounded Context
 
-`core/` には Ingestion Context（`raw_db.py`）と Transformation Context（`plugin_host.py`）が同居している。01_conceptual_architecture.md で定義された Bounded Context の分離は、パッケージ分割ではなくモジュール間の import 規約で担保する:
+`core/` は 01_conceptual_architecture.md で定義された Bounded Context に対応し、`ingestion/` と `transformation/` の2サブパッケージに分割されている:
 
-- `plugin_host.py` は `raw_db.py` の内部実装（SQL、テーブル名等）に直接依存してはならない
+- **`core/ingestion/`**: Ingestion Context。Raw DB へのアクセスを担う。facade（`__init__.py`）が `ingest`, `update`, `list_records`, `get_accessor` を公開
+- **`core/transformation/`**: Transformation Context。Plugin Host と build/query のオーケストレーションを担う。facade（`__init__.py`）が `run_build`, `run_query` を公開
+- **`core/instance.py`**: プロジェクトルートの解決（`resolve_project()`）やパス定数（`KONKON_DIR`, `RAW_DB_FILE` 等）を提供するシステムレベルのモジュール
+
+ACL の担保:
+- `transformation/` は `ingestion/` の facade 経由でのみ Raw DB にアクセスする（`raw_db.py` の内部実装に直接依存しない）
 - 両者間のデータ受け渡しは `RawDataAccessor` プロトコル（ACL #1）を経由する
+- モジュール境界は `tach.toml` で静的に検証される
 
-ファイル数の増加に伴い `core/` を `ingestion/` + `transformation/` に分割する可能性がある。
-
-### 注2: `serving/` パッケージの確定範囲
+### 注1: `serving/` パッケージの確定範囲
 
 `serving/` のディレクトリ名とファイル名（`api.py`, `mcp.py`）は仮確定。01_conceptual_architecture.md の Serving Context に対応し、ステートレスなプロトコルアダプターとして機能する。内部で使用する HTTP フレームワーク（7. Serving 実装）と MCP SDK（8. MCP SDK）は未選定であり、06_serving_adapters.md の設計時に確定する。
 

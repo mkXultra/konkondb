@@ -1,4 +1,4 @@
-kk# 概念アーキテクチャ設計 (Conceptual Architecture)
+# 概念アーキテクチャ設計 (Conceptual Architecture)
 
 本ドキュメントは `konkon db` の全体像を抽象的に定義し、システム内の責務の境界線（Bounded Contexts）と、コンポーネント間の関係性を明確にします。
 
