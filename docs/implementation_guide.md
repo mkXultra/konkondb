@@ -91,6 +91,38 @@ def ingest(content, meta, project_root):
     return db.insert(content, meta)
 ```
 
+### CWD guarantee (save / restore)
+
+Plugin invocation wraps `os.chdir` in a `try/finally` to guarantee CWD restoration,
+even if the plugin raises an exception.
+
+```python
+# core/transformation/__init__.py — CORRECT
+saved_cwd = os.getcwd()
+try:
+    os.chdir(plugin_path.parent)
+    invoke_build(plugin, accessor)
+finally:
+    os.chdir(saved_cwd)
+```
+
+Ref: 04_cli_conventions.md §2.6 CWD 保証
+
+### RawDB connection (open / close)
+
+Facade functions open the DB, perform the operation, and close in `finally`.
+The caller never holds a long-lived connection.
+
+```python
+# core/ingestion/__init__.py — CORRECT
+def ingest(content, meta, project_root):
+    db = _open_raw_db(project_root)
+    try:
+        return db.insert(content, meta)
+    finally:
+        db.close()
+```
+
 ### Lazy DB initialization
 
 Raw DB is NOT created during `konkon init`. It is lazily created on first `konkon insert`.

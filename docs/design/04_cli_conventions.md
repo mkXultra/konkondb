@@ -151,6 +151,19 @@ Error: konkon.py not found. Run 'konkon init' to create a project, or use '--pro
 
 `build`, `search`, `serve` はいずれも Plugin Host を経由して `konkon.py` の関数を呼び出す。以下の振る舞いは全コマンドで共通である。
 
+#### Plugin パス解決
+
+Plugin ファイルのパスは以下の優先順位で解決する。`build`, `search`, `serve` の全コマンドで共通である。
+
+| 優先度 | ソース | 解決方法 |
+| :--- | :--- | :--- |
+| 1 | `--plugin` CLI オプション | 指定パスをそのまま使用 |
+| 2 | `KONKON_PLUGIN` 環境変数 | CWD 基準で解決 |
+| 3 | `.konkon/config.toml` の `plugin` キー | プロジェクトルート基準で解決 |
+| 4 | フォールバック | `<project-root>/konkon.py` |
+
+解決されたパスが存在しない場合、終了コード `3` (CONFIG_ERROR) でエラーとする。
+
 #### Load と Contract 検証
 
 1. `konkon.py` をインポートし、`build` と `query` の両関数が**存在し呼び出し可能**であることを検証する（[02_interface_contracts.md §1](./02_interface_contracts.md)）。型注釈の有無や引数名は検証しない

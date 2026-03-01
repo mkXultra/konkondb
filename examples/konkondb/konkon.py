@@ -193,6 +193,8 @@ def _render_table_filter(section: dict, store: dict) -> list[str]:
     if not filtered:
         return []
 
+    filtered.sort(key=lambda r: r.get("file_path", ""))
+
     fmt = section["format"]
     lines = [" ".join(fmt.format(**r).split()) for r in filtered]
     return [f"## {section['label']}\n\n" + "\n".join(lines)]

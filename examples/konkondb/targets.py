@@ -5,9 +5,9 @@ QUERIES: ストアからどう組み立てるかの宣言（query用）
 両者は store_path だけで接続される。
 """
 
-# ---------------------------------------------------------------------------
-# Shared: L0 ターゲット定義
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Implementation View — L0 ターゲット
+# ===========================================================================
 
 L0_TARGETS = {
     # --- プロジェクト概要 ---
@@ -80,15 +80,55 @@ L0_TARGETS = {
     },
 }
 
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Design View — L0 ターゲット
+# ===========================================================================
+
+DESIGN_L0_TARGETS = {
+    "concept.md": {
+        "label": "設計コンセプト",
+        "raw": True,
+    },
+    "prd.md": {
+        "label": "プロダクト要件・スコープ",
+        "raw": True,
+    },
+    "docs/design/01_conceptual_architecture.md": {
+        "label": "アーキテクチャ設計",
+        "raw": True,
+    },
+    "docs/design/02_interface_contracts.md": {
+        "label": "インターフェース設計",
+        "raw": True,
+    },
+    "docs/design/03_data_model.md": {
+        "label": "データモデル設計",
+        "raw": True,
+    },
+    "docs/design/04_cli_conventions.md": {
+        "label": "CLI設計",
+        "raw": True,
+    },
+    "docs/design/05_project_structure.md": {
+        "label": "プロジェクト構成設計",
+        "raw": True,
+    },
+}
+
+# ===========================================================================
 # Build declarations — ストアに何を入れるか
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
 BUILDS = [
     {
         "type": "condensed",
         "store_path": "views.implementation.l0",
         "targets": L0_TARGETS,
+    },
+    {
+        "type": "condensed",
+        "store_path": "views.design.l0",
+        "targets": DESIGN_L0_TARGETS,
     },
     {
         "type": "file_map",
@@ -112,9 +152,9 @@ BUILDS = [
     },
 ]
 
-# ---------------------------------------------------------------------------
+# ===========================================================================
 # Query declarations — ストアからどう組み立てるか
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
 QUERIES = {
     "implementation": {
@@ -132,6 +172,24 @@ QUERIES = {
                 "store_path": "tables.file_map",
                 "filter": lambda r: r["file_path"].startswith(("src/", "tests/")),
                 "format": "{file_path}: {status} {summary}",
+            },
+        ],
+    },
+    "design": {
+        "title": "設計用コンテキスト",
+        "sections": [
+            {
+                "type": "condensed",
+                "label": "設計判断",
+                "store_path": "views.design.l0",
+                "targets": DESIGN_L0_TARGETS,
+            },
+            {
+                "type": "table_filter",
+                "label": "設計ドキュメント一覧",
+                "store_path": "tables.file_map",
+                "filter": lambda r: r["file_path"].startswith("docs/"),
+                "format": "{file_path}: {summary}",
             },
         ],
     },
