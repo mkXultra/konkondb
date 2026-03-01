@@ -171,3 +171,126 @@ class TestRawListCommand:
         assert result.exit_code == 0
         obj = json.loads(result.output.strip())
         assert obj["content"] == long_content
+
+
+class TestRawGetCommand:
+    """konkon raw get <ID> — CLI integration tests."""
+
+    def test_get_text_format(self, tmp_path: Path):
+        """Text format shows full record details."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        record_id = _insert_record(runner, tmp_path, "hello world")
+        result = runner.invoke(
+            main, ["-C", str(tmp_path), "raw", "get", record_id, "--format", "text"]
+        )
+        assert result.exit_code == 0
+        assert f"ID:         {record_id}" in result.output
+        assert "Created:" in result.output
+        assert "Updated:" in result.output
+        assert "Content:    hello world" in result.output
+        assert "Meta:" in result.output
+
+    def test_get_json_format(self, tmp_path: Path):
+        """JSON format outputs the record as a single JSON object."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        record_id = _insert_record(runner, tmp_path, "json test")
+        result = runner.invoke(
+            main, ["-C", str(tmp_path), "raw", "get", record_id, "--format", "json"]
+        )
+        assert result.exit_code == 0
+        obj = json.loads(result.output.strip())
+        assert obj["id"] == record_id
+        assert obj["content"] == "json test"
+        assert "created_at" in obj
+        assert "updated_at" in obj
+        assert "meta" in obj
+
+    def test_get_not_found_exit_1(self, tmp_path: Path):
+        """ID not found → exit 1 with error message."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        # Insert a record so DB exists
+        _insert_record(runner, tmp_path, "seed")
+        result = runner.invoke(
+            main, ["-C", str(tmp_path), "raw", "get", "nonexistent-id"]
+        )
+        assert result.exit_code == 1
+        assert "Record not found: nonexistent-id" in result.output
+
+    def test_get_no_db_file_exit_1(self, tmp_path: Path):
+        """Project init'd but no DB file → exit 1 (record not found), DB not created."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        db_file = tmp_path / ".konkon" / "raw.db"
+        assert not db_file.exists()
+
+        result = runner.invoke(
+            main, ["-C", str(tmp_path), "raw", "get", "some-id"]
+        )
+        assert result.exit_code == 1
+        assert "Record not found: some-id" in result.output
+        # Must NOT have created the DB
+        assert not db_file.exists()
+
+    def test_get_without_init_exit_3(self, tmp_path: Path):
+        """konkon raw get without project init → exit 3 (CONFIG_ERROR)."""
+        runner = CliRunner()
+        result = runner.invoke(
+            main, ["-C", str(tmp_path), "raw", "get", "some-id"]
+        )
+        assert result.exit_code == 3
+
+    def test_get_schema_mismatch_exit_3(self, tmp_path: Path):
+        """Raw DB with unknown schema version → exit 3 (CONFIG_ERROR)."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        db_file = tmp_path / ".konkon" / "raw.db"
+        conn = sqlite3.connect(str(db_file))
+        conn.execute("PRAGMA user_version = 99")
+        conn.close()
+
+        result = runner.invoke(
+            main, ["-C", str(tmp_path), "raw", "get", "some-id"]
+        )
+        assert result.exit_code == 3
+        assert "schema version mismatch" in result.output
+
+    def test_get_json_full_content(self, tmp_path: Path):
+        """JSON format preserves full content without truncation."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        long_content = "x" * 200
+        record_id = _insert_record(runner, tmp_path, long_content)
+        result = runner.invoke(
+            main, ["-C", str(tmp_path), "raw", "get", record_id, "--format", "json"]
+        )
+        assert result.exit_code == 0
+        obj = json.loads(result.output.strip())
+        assert obj["content"] == long_content
+
+    def test_get_text_full_content(self, tmp_path: Path):
+        """Text format shows full content (no truncation)."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        long_content = "x" * 200
+        record_id = _insert_record(runner, tmp_path, long_content)
+        result = runner.invoke(
+            main, ["-C", str(tmp_path), "raw", "get", record_id, "--format", "text"]
+        )
+        assert result.exit_code == 0
+        assert long_content in result.output
+
+    def test_get_default_format_json_in_non_tty(self, tmp_path: Path):
+        """Without --format, CliRunner (non-TTY) defaults to JSON output."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        record_id = _insert_record(runner, tmp_path, "auto detect")
+        result = runner.invoke(
+            main, ["-C", str(tmp_path), "raw", "get", record_id]
+        )
+        assert result.exit_code == 0
+        obj = json.loads(result.output.strip())
+        assert obj["id"] == record_id
+        assert obj["content"] == "auto detect"

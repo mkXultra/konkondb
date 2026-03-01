@@ -322,6 +322,16 @@ class RawDB:
             updated_at=now,
         )
 
+    def get_record(self, record_id: str) -> RawRecord | None:
+        """Return a single record by ID, or None if not found."""
+        row = self._conn.execute(
+            f"SELECT {_SELECT_COLS} FROM raw_records WHERE id = ?",
+            (record_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return _row_to_record(row)
+
     def list_records(self, limit: int) -> list[RawRecord]:
         """Return up to *limit* records ordered by created_at DESC, id DESC.
 

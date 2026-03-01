@@ -67,6 +67,25 @@ def update(
         db.close()
 
 
+def get_record(
+    project_root: Path,
+    record_id: str,
+) -> RawRecord | None:
+    """Return a single record by ID, or None if not found.
+
+    Returns None if the Raw DB file does not exist yet
+    (read-only command must not create the DB).
+    """
+    db_file = raw_db_path(project_root)
+    if not db_file.exists():
+        return None
+    db = _open_raw_db(project_root)
+    try:
+        return db.get_record(record_id)
+    finally:
+        db.close()
+
+
 def list_records(
     project_root: Path,
     limit: int = 20,

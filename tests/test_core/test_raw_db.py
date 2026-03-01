@@ -608,6 +608,39 @@ class TestUnknownSchemaVersion:
             RawDB(db_path)
 
 
+# ---- get_record ----
+
+
+class TestRawDBGetRecord:
+    """RawDB.get_record(record_id) — retrieve a single record by ID."""
+
+    def test_get_existing_record(self, raw_db: RawDB):
+        record = raw_db.insert(content="hello")
+        result = raw_db.get_record(record.id)
+        assert result is not None
+        assert result.id == record.id
+        assert result.content == "hello"
+
+    def test_get_nonexistent_record(self, raw_db: RawDB):
+        result = raw_db.get_record("nonexistent-id")
+        assert result is None
+
+    def test_get_record_with_meta(self, raw_db: RawDB):
+        record = raw_db.insert(content="hello", meta={"key": "value"})
+        result = raw_db.get_record(record.id)
+        assert result is not None
+        assert result.meta == {"key": "value"}
+
+    def test_get_record_returns_updated_at(self, raw_db: RawDB):
+        record = raw_db.insert(content="hello")
+        time.sleep(0.01)
+        raw_db.update(record.id, content="updated")
+        result = raw_db.get_record(record.id)
+        assert result is not None
+        assert result.content == "updated"
+        assert result.updated_at > result.created_at
+
+
 # ---- list_records ----
 
 

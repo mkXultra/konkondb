@@ -6,7 +6,7 @@ from pathlib import Path
 
 import click
 
-from konkon.core.ingestion import list_records
+from konkon.core.ingestion import get_record, list_records
 from konkon.core.instance import resolve_project
 
 
@@ -23,6 +23,7 @@ def raw(ctx: click.Context) -> None:
     \b
     Subcommands:
       list   List recent raw records
+      get    Get a single raw record by ID
     """
     pass
 
@@ -87,6 +88,69 @@ def list_cmd(ctx: click.Context, limit: int, fmt: str | None) -> None:
             click.echo(json.dumps(obj, ensure_ascii=False))
     else:
         _print_table(records)
+
+
+@raw.command("get", short_help="Get a single raw record by ID")
+@click.argument("record_id", metavar="ID")
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["text", "json"]),
+    default=None,
+    help="Output format (default: auto-detect from TTY).",
+)
+@click.pass_context
+def get_cmd(ctx: click.Context, record_id: str, fmt: str | None) -> None:
+    """Get a single raw record by ID.
+
+    \b
+    Text mode shows the full record details;
+    JSON mode outputs the record as a single JSON object.
+    """
+    try:
+        project_dir = ctx.obj.get("project_dir") if ctx.obj else None
+        start = Path(project_dir) if project_dir else None
+        project_root = resolve_project(start)
+    except FileNotFoundError as e:
+        click.echo(str(e), err=True)
+        sys.exit(3)
+
+    try:
+        record = get_record(project_root, record_id)
+    except RuntimeError as e:
+        # Schema version mismatch etc. — configuration error
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(3)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    if record is None:
+        click.echo(f"Error: Record not found: {record_id}", err=True)
+        sys.exit(1)
+
+    # Resolve format: explicit > TTY detection
+    if fmt is None:
+        fmt = "text" if sys.stdout.isatty() else "json"
+
+    if fmt == "json":
+        obj = {
+            "id": record.id,
+            "created_at": record.created_at.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z",
+            "updated_at": (record.updated_at or record.created_at).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z",
+            "content": record.content,
+            "meta": dict(record.meta),
+        }
+        click.echo(json.dumps(obj, ensure_ascii=False))
+    else:
+        created = record.created_at.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+        updated = (record.updated_at or record.created_at).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+        meta_str = json.dumps(dict(record.meta), ensure_ascii=False) if record.meta else "{}"
+        click.echo(f"ID:         {record.id}")
+        click.echo(f"Created:    {created}")
+        click.echo(f"Updated:    {updated}")
+        click.echo(f"Content:    {record.content}")
+        click.echo(f"Meta:       {meta_str}")
 
 
 def _truncate(s: str, length: int = 50) -> str:
