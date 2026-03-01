@@ -17,7 +17,7 @@ Does NOT know about:
 References:
 - 01_conceptual_architecture.md §1.1, §2.1, §3.1
 - 03_data_model.md (Raw DB schema)
-- 04_cli_design.md §4.2 (insert)
+- commands/insert.md
 """
 
 from datetime import datetime

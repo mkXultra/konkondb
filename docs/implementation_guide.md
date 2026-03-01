@@ -98,7 +98,7 @@ Raw DB is NOT created during `konkon init`. It is lazily created on first `konko
 - `init`: creates `.konkon/` dir + `konkon.py` template only
 - `insert`: opens or creates `.konkon/raw.db` on first call
 
-Ref: 04_cli_design.md §4.1, §4.2
+Ref: commands/init.md, commands/insert.md
 
 ## Testing
 
@@ -139,5 +139,6 @@ This runs both unit tests and module boundary checks (`tests/test_architecture.p
 - [01_conceptual_architecture.md](design/01_conceptual_architecture.md) — Bounded Contexts, ACLs
 - [02_interface_contracts.md](design/02_interface_contracts.md) — Plugin Contract
 - [03_data_model.md](design/03_data_model.md) — Raw DB schema
-- [04_cli_design.md](design/04_cli_design.md) — CLI commands spec
+- [04_cli_conventions.md](design/04_cli_conventions.md) — CLI conventions
+- [commands/](design/commands/) — Individual command specs
 - [05_project_structure.md](design/05_project_structure.md) — Technology choices

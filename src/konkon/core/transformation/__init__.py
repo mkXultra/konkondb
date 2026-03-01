@@ -23,7 +23,7 @@ ACL boundaries:
 References:
 - 01_conceptual_architecture.md §1.2, §2.1, §3.2
 - 02_interface_contracts.md §1 (Plugin Contract), §2.1 (Async/Sync)
-- 04_cli_design.md §4.3 (build), §4.4 (search)
+- commands/build.md, commands/search.md
 """
 
 import os
@@ -71,7 +71,7 @@ def run_build(
     1. Load and validate plugin (Plugin Contract, ACL #2)
     2. Get RawDataAccessor from Ingestion Context (ACL #1)
     3. Apply incremental filter unless full=True
-    4. Set CWD to plugin directory (04_cli_design.md §3.6)
+    4. Set CWD to plugin directory (04_cli_conventions.md §2.6)
     5. Invoke plugin.build(accessor)
     6. Record last_build timestamp on success
     """
@@ -91,7 +91,7 @@ def run_build(
         project_root, modified_since=last_build
     )
 
-    # CWD guarantee: plugin runs in its own directory (§3.6)
+    # CWD guarantee: plugin runs in its own directory (§2.6)
     saved_cwd = os.getcwd()
     try:
         os.chdir(plugin_path.parent)
@@ -115,7 +115,7 @@ def run_query(
     Orchestrates the data flow:
     1. Load and validate plugin (Plugin Contract, ACL #2)
     2. Create QueryRequest from query_str + params
-    3. Set CWD to plugin directory (04_cli_design.md §3.6)
+    3. Set CWD to plugin directory (04_cli_conventions.md §2.6)
     4. Invoke plugin.query(request) and return result
     """
     if plugin_path is None:
@@ -124,7 +124,7 @@ def run_query(
     plugin = load_plugin(plugin_path)
     request = QueryRequest(query=query_str, params=params or {})
 
-    # CWD guarantee: plugin runs in its own directory (§3.6)
+    # CWD guarantee: plugin runs in its own directory (§2.6)
     saved_cwd = os.getcwd()
     try:
         os.chdir(plugin_path.parent)

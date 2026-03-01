@@ -6,8 +6,8 @@ Responsibilities:
 - Lazy Raw DB initialization (create on first insert, not on init)
 
 References:
-- 04_cli_design.md §4.1 (init creates .konkon/ but NOT the DB)
-- 04_cli_design.md §4.2 (insert lazily creates DB)
+- commands/init.md (init creates .konkon/ but NOT the DB)
+- commands/insert.md (insert lazily creates DB)
 
 Used by:
 - cli/init.py — create .konkon/ and konkon.py template
@@ -74,7 +74,7 @@ def resolve_project(start: Path | None = None) -> Path:
     """Walk up from *start* to find the project root (directory containing konkon.py).
 
     Raises FileNotFoundError if konkon.py is not found up to the filesystem root.
-    Per 04_cli_design.md §3.4.
+    Per 04_cli_conventions.md §2.4.
     """
     current = (start or Path.cwd()).resolve()
     while True:

@@ -14,7 +14,7 @@ def serve() -> None:
 
     Delegates to serving/api.py or serving/mcp.py (Serving Context).
     """
-    # TODO: Implement per 04_cli_design.md §4.5
+    # TODO: Implement per commands/serve-api.md and commands/serve-mcp.md
     # - Parse --api / --mcp subcommand
     # - Delegate to serving/api.py or serving/mcp.py
     raise NotImplementedError
