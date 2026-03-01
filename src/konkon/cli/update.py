@@ -5,7 +5,7 @@ from pathlib import Path
 
 import click
 
-from konkon.core.ingestion import update
+from konkon.application import update as app_update
 from konkon.core.instance import resolve_project
 
 
@@ -68,7 +68,7 @@ def update_cmd(
         project_dir = ctx.obj.get("project_dir") if ctx.obj else None
         start = Path(project_dir) if project_dir else None
         project_root = resolve_project(start)
-        record = update(
+        record = app_update(
             record_id,
             content=content,
             meta=meta or None,

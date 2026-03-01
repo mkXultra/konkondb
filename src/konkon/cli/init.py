@@ -6,7 +6,7 @@ from pathlib import Path
 
 import click
 
-from konkon.core.instance import init_project
+from konkon.application import init as app_init
 
 
 def register(group: click.Group) -> None:
@@ -29,7 +29,7 @@ def init(directory: str, force: bool, plugin: str | None) -> None:
     Raw DB is NOT created here — it is lazily initialized on first insert.
     """
     try:
-        init_project(Path(directory).resolve(), force=force, plugin=plugin)
+        app_init(Path(directory).resolve(), force=force, plugin=plugin)
     except tomllib.TOMLDecodeError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(3)

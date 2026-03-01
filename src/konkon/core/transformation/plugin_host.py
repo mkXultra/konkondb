@@ -23,6 +23,7 @@ It receives RawDataAccessor as a parameter (protocol-based dependency).
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -46,6 +47,12 @@ def load_plugin(path: Path) -> ModuleType:
     """
     if not path.exists():
         raise FileNotFoundError(f"Plugin file not found: {path}")
+
+    # Add plugin directory to sys.path so sibling modules (e.g. targets.py)
+    # can be imported by the plugin.
+    plugin_dir = str(path.parent.resolve())
+    if plugin_dir not in sys.path:
+        sys.path.insert(0, plugin_dir)
 
     spec = importlib.util.spec_from_file_location("konkon_plugin", str(path))
     assert spec is not None and spec.loader is not None

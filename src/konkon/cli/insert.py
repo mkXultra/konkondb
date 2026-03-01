@@ -5,7 +5,7 @@ from pathlib import Path
 
 import click
 
-from konkon.core import ingestion
+from konkon.application import insert as app_insert
 from konkon.core.instance import resolve_project
 
 
@@ -35,7 +35,7 @@ def insert(ctx: click.Context, text: str | None, meta: tuple[str, ...]) -> None:
     """Append text data to the Raw DB.
 
     TEXT can be provided as argument or via stdin.
-    Delegates to core/ingestion (Ingestion Context facade).
+    Delegates to Application Layer Use Case.
     """
     try:
         # Resolve content: argument or stdin
@@ -58,8 +58,8 @@ def insert(ctx: click.Context, text: str | None, meta: tuple[str, ...]) -> None:
         # Parse metadata
         meta_dict = _parse_meta(meta)
 
-        # Delegate to facade
-        record = ingestion.ingest(content, meta_dict, project_root)
+        # Delegate to Application Layer
+        record = app_insert(content, meta_dict, project_root)
         click.echo(record.id)
     except FileNotFoundError as e:
         click.echo(str(e), err=True)

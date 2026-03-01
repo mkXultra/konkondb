@@ -6,7 +6,7 @@ from pathlib import Path
 
 import click
 
-from konkon.core.ingestion import get_record, list_records
+from konkon.application import raw_get, raw_list
 from konkon.core.instance import resolve_project
 
 
@@ -60,7 +60,7 @@ def list_cmd(ctx: click.Context, limit: int, fmt: str | None) -> None:
         sys.exit(3)
 
     try:
-        records = list_records(project_root, limit=limit)
+        records = raw_list(project_root, limit=limit)
     except RuntimeError as e:
         # Schema version mismatch etc. — configuration error
         click.echo(f"Error: {e}", err=True)
@@ -116,7 +116,7 @@ def get_cmd(ctx: click.Context, record_id: str, fmt: str | None) -> None:
         sys.exit(3)
 
     try:
-        record = get_record(project_root, record_id)
+        record = raw_get(project_root, record_id)
     except RuntimeError as e:
         # Schema version mismatch etc. — configuration error
         click.echo(f"Error: {e}", err=True)

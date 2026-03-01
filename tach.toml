@@ -10,7 +10,7 @@ exact = false  # TODO: set true after skeleton implementations are complete
 forbid_circular_dependencies = true
 layers_explicit_depends_on = true
 
-layers = ["cli", "serving", "core"]
+layers = ["cli", "application", "serving", "core"]
 
 # ─── CLI Layer ──────────────────────────────────────────
 # Orchestrator — not part of any Bounded Context.
@@ -18,10 +18,20 @@ layers = ["cli", "serving", "core"]
 path = "konkon.cli"
 layer = "cli"
 depends_on = [
+    "konkon.application",
+    "konkon.core.instance",
+    "konkon.serving",
+]
+
+# ─── Application Layer ─────────────────────────────────
+# Thin Orchestrator — Use Cases that delegate to Context Facades.
+[[modules]]
+path = "konkon.application"
+layer = "application"
+depends_on = [
     "konkon.core.instance",
     "konkon.core.ingestion",
     "konkon.core.transformation",
-    "konkon.serving",
 ]
 
 # ─── Serving Layer ──────────────────────────────────────
@@ -35,6 +45,15 @@ depends_on = [
 ]
 
 # ─── Core Layer ─────────────────────────────────────────
+
+# Top-level package — Lib Entry (public Python API re-export)
+# Layer = cli (entry point, same level as CLI). utility = true so
+# submodules (core.models, types, etc.) can be imported via konkon.*.
+[[modules]]
+path = "konkon"
+layer = "cli"
+utility = true
+depends_on = ["konkon.application"]
 
 # Shared types — importable by all without declaration
 [[modules]]
