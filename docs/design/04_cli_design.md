@@ -831,30 +831,36 @@ konkon update [OPTIONS] RECORD_ID
 
 ---
 
-### 4.7 `konkon raw list` — Raw Record 一覧表示
+### 4.7 `konkon raw` — Raw DB 検査コマンド
 
-#### 概要
-
-Raw DB のレコード一覧を新しい順に表示する。デバッグ・運用向けの読み取り専用コマンド。
+デバッグ・運用向けの読み取り専用サブコマンドグループ。Raw DB の中身を直接確認する。
 
 #### Bounded Context の対応
 
-**Ingestion Context** を読み取り専用で呼び出す。Raw DB が存在しない場合は空の結果を返す（DB を新規作成しない）。
+**Ingestion Context** を読み取り専用で呼び出す。いずれのサブコマンドも Raw DB を新規作成しない。
 
-#### シグネチャ
+---
+
+#### 4.7.1 `konkon raw list` — Raw Record 一覧表示
+
+##### 概要
+
+Raw DB のレコード一覧を新しい順に表示する。
+
+##### シグネチャ
 
 ```
 konkon raw list [OPTIONS]
 ```
 
-#### オプション
+##### オプション
 
 | オプション | 型 | デフォルト | 説明 |
 | :--- | :--- | :--- | :--- |
 | `--limit` | `INT` (>= 0) | `20` | 表示するレコードの最大数 |
 | `--format` | `text\|json` | (TTY 自動検出) | 出力フォーマット |
 
-#### stdout 出力
+##### stdout 出力
 
 **text フォーマット:**
 
@@ -868,20 +874,81 @@ konkon raw list [OPTIONS]
 {"id": "...", "created_at": "...", "updated_at": "...", "content": "...", "meta": {}}
 ```
 
-#### 振る舞い
+##### 振る舞い
 
 1. Raw DB ファイルが存在しない場合、何も出力せず正常終了（exit `0`）
 2. レコードが0件の場合も同様に何も出力せず正常終了（exit `0`）
 3. レコードは `created_at DESC, id DESC` の順序（新しいものが先）
 
-#### 終了コード
+##### 終了コード
 
 | コード | 条件 |
 | :--- | :--- |
 | `0` | 正常（空結果も含む） |
 | `1` | 一般エラー（DB アクセス失敗等） |
 | `2` | 引数エラー（`--limit` に負値等） |
-| `3` | プロジェクト未初期化（`konkon.py` 未検出） |
+| `3` | プロジェクト未初期化（`konkon.py` 未検出）、Raw DB スキーマ不一致 |
+
+---
+
+#### 4.7.2 `konkon raw get` — Raw Record 個別取得
+
+##### 概要
+
+ID を指定して Raw DB から1件のレコードを取得する。デバッグ・スクリプト連携向け。
+
+##### シグネチャ
+
+```
+konkon raw get [OPTIONS] ID
+```
+
+##### 引数
+
+| 引数 | 必須 | 説明 |
+| :--- | :--- | :--- |
+| `ID` | Yes | 取得する Raw Record の ID |
+
+##### オプション
+
+| オプション | 型 | デフォルト | 説明 |
+| :--- | :--- | :--- | :--- |
+| `--format` | `text\|json` | (TTY 自動検出) | 出力フォーマット |
+
+##### stdout 出力
+
+**text フォーマット:**
+
+```
+ID:         019516a0-3b40-7f8a-b12c-4e5f6a7b8c9d
+Created:    2026-02-27T12:34:56.789012Z
+Updated:    2026-02-27T12:34:56.789012Z
+Content:    （全文表示、切り詰めない）
+Meta:       {"source_uri": "/path/to/notes.md"}
+```
+
+**json フォーマット:**
+
+```json
+{"id": "...", "created_at": "...", "updated_at": "...", "content": "...", "meta": {}}
+```
+
+`raw list` の JSON と同一構造。1行で出力する。
+
+##### 振る舞い
+
+1. ID に一致するレコードが見つかった場合、stdout に出力し正常終了（exit `0`）
+2. Raw DB ファイルが存在しない場合、レコード未検出として扱う（exit `1`）
+3. ID に一致するレコードが見つからない場合、stderr に `Error: Record not found: <ID>` を出力（exit `1`）
+
+##### 終了コード
+
+| コード | 条件 |
+| :--- | :--- |
+| `0` | レコードが見つかった |
+| `1` | レコード未検出（DB 不在を含む）、一般エラー |
+| `2` | 引数エラー |
+| `3` | プロジェクト未初期化（`konkon.py` 未検出）、Raw DB スキーマ不一致 |
 
 ---
 
@@ -896,6 +963,7 @@ konkon raw list [OPTIONS]
 | `konkon insert` | Ingestion Context | Raw Record の永続化 | **Write** | — |
 | `konkon update` | Ingestion Context | Raw Record の更新 | **Write** | — |
 | `konkon raw list` | Ingestion Context | Raw Record の一覧取得 | **Read** | — |
+| `konkon raw get` | Ingestion Context | Raw Record の個別取得 | **Read** | — |
 | `konkon build` | Transformation Context → User Plugin | `build(raw_data)` | Read (via Accessor) | Write (Plugin 内部) |
 | `konkon search` | Transformation Context → User Plugin | `query(request)` | — | Read (Plugin 内部) |
 | `konkon serve api` | Serving → Transformation → User Plugin | `query(request)` (per request) | — | Read (Plugin 内部) |
@@ -911,6 +979,7 @@ konkon raw list [OPTIONS]
 | `init` | L1-L3 外 | ファイルシステム操作のみ |
 | `insert` | L1（Raw DB / Ingestion） | Raw Record 永続化 |
 | `raw list` | L1（Raw DB / Ingestion） | Raw Record 読み取り専用 |
+| `raw get` | L1（Raw DB / Ingestion） | Raw Record 読み取り専用 |
 | `build` | L2（Orchestrator/Contract/Accessor）+ L1 + L3 | `build(raw_data)` 実行。L1 読み取り、L3 書き込み |
 | `search` | L2（Contract/Host）+ L3 | `query(request)` 実行。L3 読み取り |
 | `serve` | L3（Serving Adapter）+ L2 + L3 | サーバー起動。Adapter → Plugin Host → User Plugin |
@@ -1007,7 +1076,6 @@ Error: Raw DB schema version mismatch (expected: 2, found: 1). Please update kon
 | 拡張 | 概要 |
 | :--- | :--- |
 | `konkon status` | Raw DB のレコード数、最終 insert 日時、Context Store の状態を表示 |
-| `konkon raw get <id>` | Raw DB の個別レコード表示（デバッグ用） |
 | `konkon serve api mcp` | API と MCP の同時起動 |
 | `konkon build --watch` | ファイル変更を監視して自動リビルド |
 | `konkon plugin validate` | Plugin Contract の事前検証（サーバー起動なし） |
