@@ -106,7 +106,7 @@ class RawDataAccessor(Protocol):
 
 @dataclass(frozen=True)
 class QueryRequest:
-    """ACL #3: Serving層から渡される正規化された検索リクエスト"""
+    """ACL #3: Application Layer（Serving Adapter 経由を含む）から渡される正規化された検索リクエスト"""
     query: str
     params: Mapping[str, JSONValue] = field(default_factory=dict)
 
@@ -187,7 +187,7 @@ def build(raw_data: RawDataAccessor) -> None:
 def query(request: QueryRequest) -> str | QueryResult:
     """
     [Retrieve (Read) フェーズ]
-    Serving層からの検索要求を受け取り、Context DB から情報を引き出して返す。
+    Application Layer（Serving Adapter 経由を含む）からの検索要求を受け取り、Context DB から情報を引き出して返す。
 
     戻り値に None は不可。結果がない場合は空文字列 "" または
     QueryResult(content="") を返すこと。

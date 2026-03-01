@@ -35,16 +35,21 @@
 
 ### 1.4 CLI のアーキテクチャ上の役割
 
-`01_conceptual_architecture.md` の C4 モデルで定義されている通り、**CLI はどの Bounded Context にも属さない「オーケストレーター」**である。
+`01_conceptual_architecture.md` の C4 モデルで定義されている通り、**CLI は Application Layer 内の Entry Point** である。
 
 ```text
-Developer ──▶ [konkon CLI] ──▶ Ingestion Context  (insert, update)
-                            ──▶ Transformation Context (build, search)
-                            ──▶ Serving Context  (serve)
+Developer ──▶ [CLI Entry] ──▶ Use Cases (Thin Orchestrator)
+                                ──▶ Ingestion Facade   (insert, update)
+                                ──▶ Transformation Facade (build, search)
+                                ──▶ Serving Context    (serve: 起動制御のみ※)
 ```
 
+> ※ `serve` の矢印はランタイムのデータフロー依存ではなく、サーバープロセスの起動・停止というライフサイクル制御を表す。実行時のクエリフローは `Serving Context → Use Cases → Transformation Facade` の方向であり、依存方向は逆転しない。
+
+依存方向: `Entry Point (CLI / Lib) → Application Layer (Use Cases) → Context Facade`
+
 境界ルール（MUST）:
-- CLI は各コンテキストの公開インターフェースを叩くだけであり、Raw DB や Context Store に直接アクセスしない
+- CLI は Application Layer の Use Case を経由して各 Context Facade を呼び出す。Raw DB や Context Store に直接アクセスしない
 - CLI は User Plugin に Raw DB の接続オブジェクトを渡してはならない
 - `serve` 起動時も CLI はサーバープロセスの起動・停止のみを行い、プロトコル変換は Serving Context に委譲する
 

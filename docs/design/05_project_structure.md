@@ -48,7 +48,10 @@ konkondb/                       # プロジェクトルート (git root)
 │       │                       #   RawDataAccessor, RawRecord,
 │       │                       #   QueryRequest, QueryResult,
 │       │                       #   KonkonError, BuildError, QueryError
-│       ├── cli/                # CLI層 (click)
+│       ├── application/        # Application Layer (注2)
+│       │   ├── __init__.py     #   Use Case の公開 API
+│       │   └── use_cases.py    #   Thin Orchestrator (Context Facade の呼び出し調停)
+│       ├── cli/                # CLI Entry (click)
 │       │   ├── __init__.py     #   main group + エントリポイント
 │       │   ├── init.py
 │       │   ├── insert.py
@@ -74,11 +77,21 @@ konkondb/                       # プロジェクトルート (git root)
 └── tests/
     ├── conftest.py
     ├── test_cli/
+    ├── test_application/
     ├── test_core/
     └── test_serving/
 ```
 
 参考: [Datasette](https://github.com/simonw/datasette) — SQLite ベースの CLI + API サーバー (click 採用)
+
+### `application/` パッケージと Application Layer
+
+`application/` は 01_conceptual_architecture.md §3.5 で定義された Application Layer に対応する。BC をまたぐユースケースの調停（Thin Orchestrator）を担い、各 Context Facade を呼び出すだけでドメインロジックを持たない:
+
+- **`application/use_cases.py`**: Use Case の実装。Ingestion Facade / Transformation Facade を順序付けて呼び出し、結果を組み立てる
+- **`application/__init__.py`**: Use Case の公開 API
+
+依存方向: `cli/` → `application/` → `core/`（各 Context Facade）。`application/` は `serving/` に依存しない。
 
 ### `core/` パッケージと Bounded Context
 
@@ -92,6 +105,10 @@ ACL の担保:
 - `transformation/` は `ingestion/` の facade 経由でのみ Raw DB にアクセスする（`raw_db.py` の内部実装に直接依存しない）
 - 両者間のデータ受け渡しは `RawDataAccessor` プロトコル（ACL #1）を経由する
 - モジュール境界は `tach.toml` で静的に検証される
+
+### 注2: `application/` パッケージの確定範囲
+
+`application/` は 01_conceptual_architecture.md §3.5 の Application Layer に対応する。CLI Entry（`cli/`）と Lib Entry（将来の `lib/` 相当）は Application Layer の Entry Point であり、`application/use_cases.py` の Use Case を呼び出す。ファイル構成は実装時に調整される可能性がある。
 
 ### 注1: `serving/` パッケージの確定範囲
 
