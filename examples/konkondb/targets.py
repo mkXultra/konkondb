@@ -116,6 +116,47 @@ DESIGN_L0_TARGETS = {
 }
 
 # ===========================================================================
+# Plugin Dev View — L0 ターゲット
+# ===========================================================================
+
+PLUGIN_DEV_L0_TARGETS = {
+    # --- Plugin Contract 仕様 ---
+    "docs/design/02_interface_contracts.md": {
+        "label": "Plugin Contract 仕様",
+        "raw": True,
+    },
+    "src/konkon/core/models.py": {
+        "label": "型定義（QueryRequest, QueryResult, RawRecord）",
+        "raw": True,
+    },
+    "src/konkon/core/transformation/plugin_host.py": {
+        "label": "Plugin Host（プラグイン読み込み・呼び出し）",
+        "raw": True,
+    },
+    "src/konkon/core/transformation/__init__.py": {
+        "label": "Transformation Facade（build/query オーケストレーション）",
+        "raw": True,
+    },
+    # --- プラグイン実装 ---
+    "examples/konkondb/konkon.py": {
+        "label": "プラグイン本体",
+        "raw": True,
+    },
+    "examples/konkondb/targets.py": {
+        "label": "ビュー・ターゲット定義",
+        "raw": True,
+    },
+    "examples/konkondb/llm.py": {
+        "label": "LLM ラッパー",
+        "raw": True,
+    },
+    "examples/konkondb/README.md": {
+        "label": "プラグイン README",
+        "raw": True,
+    },
+}
+
+# ===========================================================================
 # Build declarations — ストアに何を入れるか
 # ===========================================================================
 
@@ -129,6 +170,11 @@ BUILDS = [
         "type": "condensed",
         "store_path": "views.design.l0",
         "targets": DESIGN_L0_TARGETS,
+    },
+    {
+        "type": "condensed",
+        "store_path": "views.plugin_dev.l0",
+        "targets": PLUGIN_DEV_L0_TARGETS,
     },
     {
         "type": "file_map",
@@ -193,4 +239,32 @@ QUERIES = {
             },
         ],
     },
+    "plugin-dev": {
+        "title": "プラグイン開発用コンテキスト",
+        "sections": [
+            {
+                "type": "condensed",
+                "label": "Plugin Contract・フレームワーク・プラグイン実装",
+                "store_path": "views.plugin_dev.l0",
+                "targets": PLUGIN_DEV_L0_TARGETS,
+            },
+            {
+                "type": "table_filter",
+                "label": "プラグイン関連ファイル",
+                "store_path": "tables.file_map",
+                "filter": lambda r: r["file_path"].startswith(
+                    ("examples/konkondb/", "src/konkon/core/transformation/", "src/konkon/core/models")
+                ),
+                "format": "{file_path}: {summary}",
+            },
+        ],
+    },
+}
+
+QUERIES["dev-full"] = {
+    "title": "開発フルコンテキスト",
+    "sections": [
+        *QUERIES["design"]["sections"],
+        *QUERIES["implementation"]["sections"],
+    ],
 }
