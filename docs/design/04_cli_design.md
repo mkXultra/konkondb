@@ -24,7 +24,7 @@
 - stdout / stderr の使い分けと出力フォーマット
 - 終了コード体系
 - コマンドごとの Bounded Context / レイヤー対応
-- Plugin Contract / Raw DB との接続点
+- Plugin Contract（[02_interface_contracts.md](./02_interface_contracts.md)）/ Raw DB（[03_data_model.md](./03_data_model.md)）との接続点
 
 ### 1.3 非スコープ
 
@@ -150,7 +150,7 @@ Error: konkon.py not found. Run 'konkon init' to create a project, or use '--pro
 
 #### Load と Contract 検証
 
-1. `konkon.py` をインポートし、`build` と `query` の両関数が**存在し呼び出し可能**であることを検証する（`02_interface_contracts.md` セクション 2.1）。型注釈の有無や引数名は検証しない
+1. `konkon.py` をインポートし、`build` と `query` の両関数が**存在し呼び出し可能**であることを検証する（[02_interface_contracts.md §1](./02_interface_contracts.md)）。型注釈の有無や引数名は検証しない
 2. いずれかの関数が欠落している場合、終了コード `3` (CONFIG_ERROR) でエラー
 
 #### CWD 保証
@@ -284,10 +284,7 @@ def query(request: QueryRequest) -> str | QueryResult:
 
 #### 終了コード
 
-| コード | 条件 |
-| :--- | :--- |
-| `0` | 正常に初期化完了 |
-| `2` | 引数エラー、`konkon.py` が既に存在（`--force` なし） |
+共通終了コードは §3.3 参照。本コマンド固有の終了コードはない。
 
 ---
 
@@ -363,22 +360,20 @@ JSON フォーマットは JSON オブジェクトを1行で出力する。
 
 #### 終了コード
 
+共通終了コード（`0`, `1`, `2`）は §3.3 参照。コマンド固有の終了コード:
+
 | コード | 条件 |
 | :--- | :--- |
-| `0` | 正常に投入された |
-| `1` | 一般エラー（DB アクセス失敗、入力読み取り失敗等） |
-| `2` | 引数エラー |
 | `3` | プロジェクト未初期化、Raw DB スキーマ不一致 |
 
 #### Raw DB の遅延作成
 
-Raw DB ファイル（`.konkon/raw.db`）が存在しない場合、`insert` コマンドの初回実行時に `03_data_model.md` セクション 12 の完全 DDL を実行してスキーマを自動作成する。DB 接続時には `03_data_model.md` で規定された PRAGMA（`journal_mode=WAL`, `busy_timeout=5000`, `foreign_keys=ON`, `synchronous=NORMAL`）を毎回適用し、`PRAGMA user_version` でスキーマバージョンを検証する。既知のバージョン差に対しては自動マイグレーションを適用する。未知のバージョン（CLI より新しいスキーマ等）の場合のみ終了コード `3` でエラーとする。
+Raw DB ファイル（`.konkon/raw.db`）が存在しない場合、`insert` コマンドの初回実行時に `03_data_model.md` セクション 12 の完全 DDL を実行してスキーマを自動作成する。DB 接続時には [03_data_model.md §8](./03_data_model.md) で規定された PRAGMA を毎回適用し、`PRAGMA user_version` でスキーマバージョンを検証する。既知のバージョン差に対しては自動マイグレーションを適用する。未知のバージョン（CLI より新しいスキーマ等）の場合のみ終了コード `3` でエラーとする。
 
 #### 03 との整合性
 
-- `id`: UUID v7 生成（`03` セクション 5 準拠）
-- `created_at`: RFC3339 UTC 固定長 27 文字（`03` セクション 6 準拠）
-- `meta` JSON の正規化（空オブジェクト `{}` → `NULL`、`json_valid` + `json_type='object'` の CHECK 制約に適合）
+- ID 生成・日時保存は [03_data_model.md](./03_data_model.md) §5, §6 に準拠
+- `meta` JSON の正規化は [03_data_model.md](./03_data_model.md) §7 の CHECK 制約に適合
 - DELETE なし（MVP）
 - 内容重複の排除（dedup）は行わない
 
@@ -473,11 +468,10 @@ konkon build [OPTIONS]
 
 #### 終了コード
 
+共通終了コード（`0`, `1`, `2`）は §3.3 参照。コマンド固有の終了コード:
+
 | コード | 条件 |
 | :--- | :--- |
-| `0` | `build()` が正常に完了 |
-| `1` | 予期しないエラー（フレームワーク側） |
-| `2` | 引数エラー |
 | `3` | `konkon.py` 未検出 / ロード失敗 / Contract 不適合 / Raw DB スキーマ不一致 |
 | `4` | `build()` 実行中のエラー（`BuildError` または Plugin 内の未捕捉例外） |
 
@@ -597,11 +591,10 @@ konkon search "query" --param 'filters={"service":"api"}'  # → {"filters": {"s
 
 #### 終了コード
 
+共通終了コード（`0`, `1`, `2`）は §3.3 参照。コマンド固有の終了コード:
+
 | コード | 条件 |
 | :--- | :--- |
-| `0` | `query()` が正常に完了（空文字列の返却も正常） |
-| `1` | 予期しないエラー |
-| `2` | 引数エラー（QUERY 未指定、`--param` / `--params-file` 形式不正等） |
 | `3` | `konkon.py` 未検出 / ロード失敗 / Contract 不適合 |
 | `5` | `query()` 実行中のエラー（`QueryError`、戻り値型不正、Plugin 内の未捕捉例外） |
 
@@ -772,11 +765,10 @@ Tool の引数は `QueryRequest` にマッピングされ、結果は `QueryResu
 
 #### 終了コード
 
+共通終了コード（`0`, `1`, `2`）は §3.3 参照。コマンド固有の終了コード:
+
 | コード | 条件 |
 | :--- | :--- |
-| `0` | グレースフルシャットダウン完了（SIGINT/SIGTERM をハンドリングした正常停止） |
-| `1` | 予期しないエラーによるクラッシュ |
-| `2` | 引数エラー（モード未指定、`api` と `mcp` 併用等） |
 | `3` | `konkon.py` 未検出 / ロード失敗 / Contract 不適合 / ポート競合等の起動失敗 |
 
 **補足:** リクエスト単位の `QueryError` はサーバーを停止させない。HTTP 422 / MCP エラー応答に翻訳されてプロセスは継続する。
@@ -822,11 +814,10 @@ konkon update [OPTIONS] RECORD_ID
 
 #### 終了コード
 
+共通終了コード（`0`, `1`, `2`）は §3.3 参照。コマンド固有の終了コード:
+
 | コード | 条件 |
 | :--- | :--- |
-| `0` | 正常に更新 |
-| `1` | レコード未検出、一般エラー |
-| `2` | 引数エラー（`--content` も `--meta` もなし） |
 | `3` | プロジェクト未初期化 |
 
 ---
@@ -882,11 +873,10 @@ konkon raw list [OPTIONS]
 
 ##### 終了コード
 
+共通終了コード（`0`, `1`, `2`）は §3.3 参照。コマンド固有の終了コード:
+
 | コード | 条件 |
 | :--- | :--- |
-| `0` | 正常（空結果も含む） |
-| `1` | 一般エラー（DB アクセス失敗等） |
-| `2` | 引数エラー（`--limit` に負値等） |
 | `3` | プロジェクト未初期化（`konkon.py` 未検出）、Raw DB スキーマ不一致 |
 
 ---
@@ -943,16 +933,17 @@ Meta:       {"source_uri": "/path/to/notes.md"}
 
 ##### 終了コード
 
+共通終了コード（`0`, `1`, `2`）は §3.3 参照。コマンド固有の終了コード:
+
 | コード | 条件 |
 | :--- | :--- |
-| `0` | レコードが見つかった |
-| `1` | レコード未検出（DB 不在を含む）、一般エラー |
-| `2` | 引数エラー |
 | `3` | プロジェクト未初期化（`konkon.py` 未検出）、Raw DB スキーマ不一致 |
 
 ---
 
 ## 5. コマンドと Bounded Context の対応一覧
+
+> **注記:** 本セクションはドキュメント間の接続関係を示すサマリーであり、仕様の再定義ではない。各仕様の正式な定義は SSOT ドキュメント（[01](./01_conceptual_architecture.md), [02](./02_interface_contracts.md), [03](./03_data_model.md)）を参照。
 
 ### 5.1 Bounded Context 対応表
 
@@ -1035,37 +1026,39 @@ Error: Raw DB schema version mismatch (expected: 2, found: 1). Please update kon
 
 ## 7. 契約との整合性チェックリスト
 
+> **注記:** 本セクションは実装時の確認用チェックリストであり、仕様の再定義ではない。各仕様の正式な定義は SSOT ドキュメント（[02_interface_contracts.md](./02_interface_contracts.md), [03_data_model.md](./03_data_model.md)）を参照。
+
 ### 7.1 Plugin Contract（02_interface_contracts.md）との整合性
 
 | 契約の要件 | CLI での実現 |
 | :--- | :--- |
 | `build()` と `query()` の両方が必須 | `build` / `search` / `serve` の Load 時に両関数の存在と呼び出し可能性を検証 → exit `3` |
-| `build(raw_data: RawDataAccessor)` | `build` コマンドが `RawDataAccessor` を構築して渡す |
-| `RawDataAccessor.since(timestamp)` | デフォルトの差分ビルドで `.konkon/last_build` の時刻を基に差分 Accessor を渡す |
-| `query(request: QueryRequest)` | `search` の QUERY と `--param` / `--params-file` から `QueryRequest` を構築 |
-| `query()` の戻り値が `str \| QueryResult` | 両方に対応した出力正規化（text/json）。`None` は契約違反 → exit `5` |
-| sync / async 両対応 | Plugin Host が `iscoroutinefunction()` / `isawaitable()` で判定（セクション 3.6） |
-| `BuildError` / `QueryError` | exit `4` / `5` にマッピング。想定エラーはクリーンメッセージで表示 |
-| `KonkonError` 以外の未捕捉例外 | Plugin 内: build → exit `4`、query → exit `5`。フレームワーク側: exit `1` |
-| `QueryRequest.params` は JSON 安全型 | `--param` / `--params-file` から `Mapping[str, JSONValue]` を構築 |
-| サーバーモードの同期 `query()` | `asyncio.to_thread()` でオフロード（セクション 3.6） |
-| CWD は Plugin ファイルのディレクトリに設定 | Plugin Invoke 前に CWD を設定（セクション 3.6） |
-| `query()` の並行呼び出し | サーバーモードで警告を記載。スレッドセーフ性は開発者責任 |
-| `build()` 中断時のロールバック不保証 | CLI は Context Store のロールバックを行わない。アトミック更新推奨 |
+| `build()` シグネチャ（[02 §1](./02_interface_contracts.md)） | `build` コマンドが `RawDataAccessor` を構築して渡す |
+| `since()` による差分アクセス（[02 §1](./02_interface_contracts.md)） | デフォルトの差分ビルドで `.konkon/last_build` の時刻を基に差分 Accessor を渡す |
+| `query()` シグネチャ（[02 §1](./02_interface_contracts.md)） | `search` の QUERY と `--param` / `--params-file` から `QueryRequest` を構築 |
+| `query()` 戻り値型（[02 §1](./02_interface_contracts.md)） | 両方に対応した出力正規化（text/json）。`None` は契約違反 → exit `5` |
+| sync / async 両対応（[02 §2.1](./02_interface_contracts.md)） | Plugin Host が `iscoroutinefunction()` / `isawaitable()` で判定（セクション 3.6） |
+| 例外クラス（[02 §1](./02_interface_contracts.md)） | exit `4` / `5` にマッピング。想定エラーはクリーンメッセージで表示 |
+| 未捕捉例外の扱い | Plugin 内: build → exit `4`、query → exit `5`。フレームワーク側: exit `1` |
+| `params` 型安全性（[02 §2.5](./02_interface_contracts.md)） | `--param` / `--params-file` から `Mapping[str, JSONValue]` を構築 |
+| サーバーモードの同期 `query()`（[02 §2.1](./02_interface_contracts.md)） | `asyncio.to_thread()` でオフロード（セクション 3.6） |
+| CWD 保証（[02 §1](./02_interface_contracts.md)） | Plugin Invoke 前に CWD を設定（セクション 3.6） |
+| `query()` の並行呼び出し（[02 §2.1](./02_interface_contracts.md)） | サーバーモードで警告を記載。スレッドセーフ性は開発者責任 |
+| `build()` 中断時のロールバック不保証（[02 §2.4](./02_interface_contracts.md)） | CLI は Context Store のロールバックを行わない。アトミック更新推奨 |
 
 ### 7.2 Raw DB データモデル（03_data_model.md）との整合性
 
 | データモデルの要件 | CLI での実現 |
 | :--- | :--- |
-| UUID v7 による `id` 生成 | `insert` コマンドがシステム側で UUID v7 を生成 |
-| RFC3339 UTC 固定長 27 文字 | `insert` コマンドが `created_at` を正規化して保存 |
-| `meta` は NULL または JSON オブジェクト（`json_valid` + `json_type='object'`） | CLI が `meta` を正規化して保存 |
+| ID 生成戦略（[03 §5](./03_data_model.md)） | `insert` コマンドがシステム側で ID を生成 |
+| 日時の保存形式（[03 §6](./03_data_model.md)） | `insert` コマンドが `created_at` を正規化して保存 |
+| `meta` の制約（[03 §7](./03_data_model.md)） | CLI が `meta` を正規化して保存 |
 | DELETE なし（MVP） | MVP では `insert` と `update` を提供。削除コマンドは設計しない |
 | Raw DB の遅延作成 | 初回 `insert` 時に DDL を実行 |
-| PRAGMA 設定（WAL, busy_timeout 等） | DB 接続時に毎回セッション PRAGMA を設定 |
-| `PRAGMA user_version` 検証 | DB 接続時にスキーマバージョンを確認。既知差分は自動マイグレーション、未知差分は exit `3` |
-| `since()` の exclusive フィルタ | 差分ビルドが `updated_at > last_build` で実行される |
-| `RawDataAccessor` の順序契約 | `ORDER BY created_at ASC, id ASC` を CLI / Accessor が保持 |
+| PRAGMA 設定（[03 §8](./03_data_model.md)） | DB 接続時に毎回セッション PRAGMA を設定 |
+| `PRAGMA user_version` 検証（[03 §9](./03_data_model.md)） | DB 接続時にスキーマバージョンを確認。既知差分は自動マイグレーション、未知差分は exit `3` |
+| `since()` フィルタ条件（[02 §1](./02_interface_contracts.md)） | 差分ビルドが `updated_at > last_build` で実行される |
+| イテレーション順序（[02 §1](./02_interface_contracts.md)） | CLI / Accessor が契約に準拠した順序を保持 |
 
 ---
 

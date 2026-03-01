@@ -18,15 +18,19 @@
 | [concept.md](../../concept.md) | プロジェクトコンセプト（基本設計相当） |
 | [prd.md](../../prd.md) | プロダクト要件定義 |
 
-## 設計プロセス
+## メタドキュメント
 
-本プロジェクトの設計書は、マルチエージェント（Claude Ultra / Codex Ultra / Gemini Ultra）による反復レビュープロセスで作成されている。詳細は [DESIGN_PROCESS.md](./DESIGN_PROCESS.md) を参照。
+| ドキュメント | 内容 |
+| :--- | :--- |
+| [DESIGN_GUIDELINES.md](./DESIGN_GUIDELINES.md) | 設計ドキュメントの記述規約（SSOT ルール） |
+| [DESIGN_PROCESS.md](./DESIGN_PROCESS.md) | マルチエージェント設計・レビュープロセス |
 
 ## ディレクトリ構成
 
 ```
 docs/design/
 ├── README.md                      # 本ファイル（設計書インデックス）
+├── DESIGN_GUIDELINES.md           # 設計ドキュメント記述規約（SSOT ルール）
 ├── DESIGN_PROCESS.md              # マルチエージェント設計プロセス
 ├── 01_conceptual_architecture.md  # 確定版
 ├── 02_interface_contracts.md      # 確定版

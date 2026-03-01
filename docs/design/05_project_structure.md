@@ -12,10 +12,10 @@
 | :--- | :--- | :--- | :--- |
 | — | 言語 | Python | PRD / concept.md |
 | — | DB | SQLite 3.38+ | 03_data_model.md（`json_valid()` に 3.38+ が必要） |
-| — | コマンド体系 | `help`, `init`, `insert`, `update`, `build`, `search`, `raw`, `serve` | 04_cli_design.md（`ask` は MVP 外・将来拡張） |
-| — | Plugin 契約 | `build(raw_data: RawDataAccessor) -> None`, `query(request: QueryRequest) -> str \| QueryResult` | 02_interface_contracts.md |
-| — | Raw DB スキーマ | `raw_records` テーブル（`id`, `created_at`, `updated_at`, `content`, `meta`） | 03_data_model.md |
-| — | 出力形式 | `text` / `json`、TTY 自動検出 | 04_cli_design.md |
+| — | コマンド体系 | [04_cli_design.md §4](./04_cli_design.md) 参照 | 04_cli_design.md |
+| — | Plugin 契約 | [02_interface_contracts.md §1](./02_interface_contracts.md) 参照 | 02_interface_contracts.md |
+| — | Raw DB スキーマ | [03_data_model.md §7](./03_data_model.md) 参照 | 03_data_model.md |
+| — | 出力形式 | [04_cli_design.md §3.2](./04_cli_design.md) 参照 | 04_cli_design.md |
 | 1 | CLI フレームワーク | `click` | サブコマンド構成との相性、`CliRunner` によるテスト容易性、Datasette 等の採用実績 |
 | 2 | プロジェクトマネージャ | `uv` | Rust 製で高速、ロックファイルあり、pip 互換、`uv run` で Poetry 相当の DX |
 | 3 | パッケージ構成 | src レイアウト | import 安全性（未インストール時の誤 import 防止） |

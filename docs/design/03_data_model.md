@@ -61,12 +61,7 @@ erDiagram
 
 ## 4. `RawRecord` と Raw DB の対応（ACL マッピング）
 
-`02_interface_contracts.md` の `RawRecord` 定義（確定）:
-
-- `id: str`
-- `created_at: datetime`（UTC-aware）
-- `content: str`
-- `meta: Mapping[str, JSONValue]`
+`RawRecord` の型定義は [02_interface_contracts.md §1](./02_interface_contracts.md) を参照。
 
 `source_uri` / `content_type` は `meta` JSON のキーとして格納され、`RawDataAccessor` が `RawRecord` の property として投影する。なお、将来 Raw DB に内部列（監査用・最適化用等）を追加することは許容される — `RawDataAccessor` が `RawRecord` に投影する限りプラグイン互換性は保たれる（セクション 2.2 参照）。
 
@@ -196,13 +191,7 @@ CREATE TABLE IF NOT EXISTS raw_records (
 
 ### 7.2 インデックス設計
 
-`02_interface_contracts.md` の順序契約:
-
-- `__iter__()` の順序: `ORDER BY created_at ASC, id ASC`
-- `since()` の順序: `ORDER BY created_at ASC, id ASC`
-- `since()` のフィルタ: `created_at > timestamp`（exclusive）
-
-これを満たすため、以下の複合インデックスを **必須**とする。
+[02_interface_contracts.md](./02_interface_contracts.md) で定義された順序・フィルタ要件を満たすため、以下の複合インデックスを **必須**とする。
 
 ```sql
 CREATE INDEX IF NOT EXISTS idx_raw_records_created_at_id
