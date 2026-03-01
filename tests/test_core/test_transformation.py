@@ -7,7 +7,7 @@ import pytest
 
 from konkon.core.instance import init_project, last_build_path
 from konkon.core.models import BuildError, QueryResult
-from konkon.core.transformation import run_build, run_query
+from konkon.core.transformation import run_build, run_describe, run_query
 
 
 def _setup_project(tmp_path: Path, plugin_code: str) -> Path:
@@ -82,6 +82,50 @@ def query(request):
 """)
         with pytest.raises(BuildError, match="db connection failed"):
             run_build(tmp_path)
+
+
+class TestRunDescribe:
+    """run_describe(project_root) — facade orchestration."""
+
+    def test_returns_schema_dict(self, tmp_path: Path):
+        """run_describe with valid plugin returns schema dict."""
+        _setup_project(tmp_path, """\
+def schema():
+    return {"description": "test plugin", "params": {"q": {"type": "string"}}}
+
+def build(raw_data):
+    pass
+
+def query(request):
+    return ""
+""")
+        result = run_describe(tmp_path)
+        assert result == {"description": "test plugin", "params": {"q": {"type": "string"}}}
+
+    def test_cwd_restored_after_call(self, tmp_path: Path):
+        """run_describe restores CWD even after successful call."""
+        import os
+
+        _setup_project(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data):
+    pass
+
+def query(request):
+    return ""
+""")
+        cwd_before = os.getcwd()
+        run_describe(tmp_path)
+        assert os.getcwd() == cwd_before
+
+    def test_plugin_not_found_raises(self, tmp_path: Path):
+        """run_describe with missing plugin raises FileNotFoundError."""
+        _setup_project(tmp_path, "")
+        (tmp_path / "konkon.py").unlink()
+        with pytest.raises(FileNotFoundError):
+            run_describe(tmp_path)
 
 
 class TestRunQuery:

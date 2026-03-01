@@ -16,6 +16,7 @@ from konkon.core.instance import init_project as _init_project
 from konkon.core.instance import resolve_plugin_path
 from konkon.core.models import JSONValue, QueryResult, RawRecord
 from konkon.core.transformation import run_build as _run_build
+from konkon.core.transformation import run_describe as _run_describe
 from konkon.core.transformation import run_query as _run_query
 
 
@@ -76,6 +77,24 @@ def build(
         else resolve_plugin_path(project_root)
     )
     _run_build(project_root, full=full, plugin_path=plugin_path)
+
+
+def describe(
+    project_root: Path,
+    *,
+    plugin_override: Path | None = None,
+) -> dict:
+    """Run schema() from the user plugin.
+
+    Resolves plugin_path via resolve_plugin_path().
+    Delegates to core.transformation.run_describe().
+    """
+    plugin_path = (
+        plugin_override
+        if plugin_override is not None
+        else resolve_plugin_path(project_root)
+    )
+    return _run_describe(project_root, plugin_path=plugin_path)
 
 
 def search(

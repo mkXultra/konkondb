@@ -36,6 +36,7 @@ from konkon.core.models import QueryRequest, QueryResult
 from konkon.core.transformation.plugin_host import (
     invoke_build,
     invoke_query,
+    invoke_schema,
     load_plugin,
 )
 
@@ -101,6 +102,30 @@ def run_build(
 
     # Record build start time (not completion time) as checkpoint
     _write_last_build(project_root, build_start)
+
+
+def run_describe(
+    project_root: Path,
+    *,
+    plugin_path: Path | None = None,
+) -> dict:
+    """Load the user plugin and invoke schema().
+
+    Returns the schema dict describing the plugin's query interface.
+    CWD guarantee: plugin runs in its own directory (§2.6).
+    """
+    if plugin_path is None:
+        plugin_path = project_root / "konkon.py"
+
+    plugin = load_plugin(plugin_path)
+
+    # CWD guarantee: plugin runs in its own directory (§2.6)
+    saved_cwd = os.getcwd()
+    try:
+        os.chdir(plugin_path.parent)
+        return invoke_schema(plugin)
+    finally:
+        os.chdir(saved_cwd)
 
 
 def run_query(

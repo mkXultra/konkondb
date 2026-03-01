@@ -2,6 +2,7 @@
 
 from konkon.application import (
     build,
+    describe,
     init,
     insert,
     raw_get,
@@ -10,4 +11,4 @@ from konkon.application import (
     update,
 )
 
-__all__ = ["build", "init", "insert", "raw_get", "raw_list", "search", "update"]
+__all__ = ["build", "describe", "init", "insert", "raw_get", "raw_list", "search", "update"]

@@ -87,6 +87,25 @@ def invoke_build(plugin: ModuleType, raw_data: object) -> None:
         raise BuildError(str(exc)) from exc
 
 
+def invoke_schema(plugin: ModuleType) -> dict:
+    """Call plugin.schema() and return the schema dict.
+
+    schema() errors are configuration-level (exit 3), so exceptions
+    are wrapped as ValueError.  Uses ValueError (not a KonkonError subclass)
+    because schema violations are config/contract errors; a dedicated
+    ConfigError may replace this in the future.
+    """
+    try:
+        result = plugin.schema()
+    except Exception as exc:
+        raise ValueError(f"schema() failed: {exc}") from exc
+    if not isinstance(result, dict):
+        raise ValueError(
+            f"schema() must return dict, got {type(result).__name__}"
+        )
+    return result
+
+
 def invoke_query(plugin: ModuleType, request: object) -> str | QueryResult:
     """Call plugin.query(request) and return the result.
 

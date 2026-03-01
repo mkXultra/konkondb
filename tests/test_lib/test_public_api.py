@@ -30,7 +30,7 @@ class TestPublicAPIExports:
         assert callable(konkon.raw_get)
 
     def test_all_exports(self):
-        expected = {"build", "init", "insert", "raw_get", "raw_list", "search", "update"}
+        expected = {"build", "describe", "init", "insert", "raw_get", "raw_list", "search", "update"}
         assert set(konkon.__all__) == expected
 
 

@@ -6,7 +6,7 @@ from types import ModuleType
 import pytest
 
 from konkon.core.models import BuildError, QueryError, QueryResult
-from konkon.core.transformation.plugin_host import invoke_build, invoke_query, load_plugin
+from konkon.core.transformation.plugin_host import invoke_build, invoke_query, invoke_schema, load_plugin
 
 
 def _write_plugin(path: Path, code: str) -> Path:
@@ -213,3 +213,71 @@ def query(request):
         module = load_plugin(plugin_path)
         with pytest.raises(QueryError, match="boom"):
             invoke_query(module, QueryRequest(query="test"))
+
+
+class TestInvokeSchema:
+    """invoke_schema(plugin) — call plugin.schema() and return dict."""
+
+    def test_returns_schema_dict(self, tmp_path: Path):
+        """invoke_schema returns the schema dict from plugin.schema()."""
+        plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test plugin", "params": {"q": {"type": "string"}}}
+
+def build(raw_data):
+    pass
+
+def query(request):
+    return ""
+""")
+        module = load_plugin(plugin_path)
+        result = invoke_schema(module)
+        assert result == {"description": "test plugin", "params": {"q": {"type": "string"}}}
+
+    def test_schema_exception_wrapped_as_value_error(self, tmp_path: Path):
+        """Exception in plugin.schema() is wrapped as ValueError."""
+        plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    raise RuntimeError("bad config")
+
+def build(raw_data):
+    pass
+
+def query(request):
+    return ""
+""")
+        module = load_plugin(plugin_path)
+        with pytest.raises(ValueError, match="bad config"):
+            invoke_schema(module)
+
+    def test_non_dict_return_raises_value_error(self, tmp_path: Path):
+        """schema() returning non-dict raises ValueError."""
+        plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    return "not a dict"
+
+def build(raw_data):
+    pass
+
+def query(request):
+    return ""
+""")
+        module = load_plugin(plugin_path)
+        with pytest.raises(ValueError, match="must return dict"):
+            invoke_schema(module)
+
+    def test_none_return_raises_value_error(self, tmp_path: Path):
+        """schema() returning None raises ValueError."""
+        plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    return None
+
+def build(raw_data):
+    pass
+
+def query(request):
+    return ""
+""")
+        module = load_plugin(plugin_path)
+        with pytest.raises(ValueError, match="must return dict"):
+            invoke_schema(module)
