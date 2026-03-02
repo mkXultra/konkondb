@@ -169,3 +169,68 @@ class TestMigrateCommand:
         )
         assert result.exit_code == 0
         assert "Migrated 1 records" in result.stderr
+
+
+def _raw_list_json(runner: CliRunner, path: Path) -> str:
+    """Run `konkon raw list --format json` and return stdout."""
+    result = runner.invoke(
+        main, ["-C", str(path), "raw", "list", "--limit", "100", "--format", "json"]
+    )
+    assert result.exit_code == 0
+    # stderr must be empty so result.output is pure stdout
+    assert result.stderr == ""
+    return result.output
+
+
+class TestMigrateCliJsonOutput:
+    """Byte-level CLI JSON output comparison before/after migration."""
+
+    def test_raw_list_json_identical_sqlite_to_json(self, tmp_path: Path):
+        """sqlite → json: `raw list --format json` output is byte-identical."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path, "sqlite")
+        _insert_record(runner, tmp_path, "hello world")
+        _insert_record(runner, tmp_path, "second record")
+
+        before = _raw_list_json(runner, tmp_path)
+        runner.invoke(main, ["-C", str(tmp_path), "migrate", "--to", "json"])
+        after = _raw_list_json(runner, tmp_path)
+
+        assert before == after
+
+    def test_raw_list_json_identical_json_to_sqlite(self, tmp_path: Path):
+        """json → sqlite: `raw list --format json` output is byte-identical."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path, "json")
+        _insert_record(runner, tmp_path, "alpha")
+        _insert_record(runner, tmp_path, "beta")
+
+        before = _raw_list_json(runner, tmp_path)
+        runner.invoke(main, ["-C", str(tmp_path), "migrate", "--to", "sqlite"])
+        after = _raw_list_json(runner, tmp_path)
+
+        assert before == after
+
+    def test_raw_list_json_identical_with_escapes(self, tmp_path: Path):
+        """Escape-heavy content: `raw list --format json` identical after migration."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path, "sqlite")
+
+        tricky = [
+            "line1\nline2\nline3",
+            "col1\tcol2\tcol3",
+            'He said "hello" and \'goodbye\'',
+            "path\\to\\file",
+            "emoji: \U0001f600 日本語テスト",
+            'json-like: {"key": [1, 2, 3]}',
+            "back\\nslash-n vs real\nnewline",
+            "   leading and trailing spaces   ",
+        ]
+        for text in tricky:
+            _insert_record(runner, tmp_path, text)
+
+        before = _raw_list_json(runner, tmp_path)
+        runner.invoke(main, ["-C", str(tmp_path), "migrate", "--to", "json"])
+        after = _raw_list_json(runner, tmp_path)
+
+        assert before == after
