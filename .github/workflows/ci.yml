@@ -29,3 +29,6 @@ jobs:
 
       - name: Run tests
         run: uv run pytest
+
+      - name: Check ingest consistency
+        run: bash scripts/check-ingest.sh
