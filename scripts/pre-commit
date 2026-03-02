@@ -17,4 +17,6 @@ if ! uv run konkon build; then
     exit 1
 fi
 
+git add .konkon/ examples/konkondb/context.json examples/konkondb/llm_cache.json
+
 echo "[pre-commit] OK"
