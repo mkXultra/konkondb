@@ -195,6 +195,20 @@ BUILDS = [
             if ("raise NotImplementedError" in content or "# TODO: Implement" in content)
             else "",
         },
+        "fixed_entries": [
+            {
+                "file_path": "examples/konkondb/context.json",
+                "summary": "ビルド結果の永続化ストア（Context Store / SSOT）",
+                "detail": "build() の出力先。views・tables を JSON で保持する。",
+                "status": "",
+            },
+            {
+                "file_path": "examples/konkondb/llm_cache.json",
+                "summary": "LLM抽出結果のキャッシュファイル",
+                "detail": "llm.extract() の結果をキャッシュし、再ビルド時のAPI呼び出しを削減する。",
+                "status": "",
+            },
+        ],
     },
 ]
 

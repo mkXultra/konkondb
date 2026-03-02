@@ -132,6 +132,7 @@ def _build_file_map(decl: dict, records: list, pool: ThreadPoolExecutor) -> list
     """type=file_map: 全ファイルのフィールドを並列LLM生成."""
     fields = decl["fields"]
     computed_fields = decl.get("computed_fields", {})
+    fixed_entries = decl.get("fixed_entries", [])
     futures = {}
 
     for record in records:
@@ -148,6 +149,10 @@ def _build_file_map(decl: dict, records: list, pool: ThreadPoolExecutor) -> list
         entry = fut.result()
         file_map.append(entry)
         print(f"  DONE {futures[fut]} ({len(fields)} fields)", file=sys.stderr)
+
+    for entry in fixed_entries:
+        file_map.append(dict(entry))
+        print(f"  FIXED {entry['file_path']}", file=sys.stderr)
 
     return file_map
 
