@@ -151,3 +151,23 @@ def query(request):
         result = runner.invoke(main, ["-C", str(tmp_path), "search", "test"])
         assert result.exit_code == 1
         assert "index not found" in result.output
+
+    def test_search_config_error_exit_3(self, tmp_path: Path):
+        """ConfigError during search → exit 3."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        _write_plugin(tmp_path, """\
+from konkon.core.models import ConfigError
+
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data):
+    pass
+
+def query(request):
+    raise ConfigError("bad backend config")
+""")
+        result = runner.invoke(main, ["-C", str(tmp_path), "search", "hello"])
+        assert result.exit_code == 3
+        assert "bad backend config" in result.output

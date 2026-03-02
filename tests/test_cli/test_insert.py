@@ -1,5 +1,6 @@
 """Tests for cli/insert.py — konkon insert command (Step 7)."""
 
+import sqlite3
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -83,3 +84,18 @@ class TestInsertCommand:
         # UUID v7 format: 8-4-4-4-12
         parts = output.split("-")
         assert len(parts) == 5
+
+    def test_insert_schema_mismatch_exit_3(self, tmp_path: Path):
+        """Raw DB with unknown schema version → exit 3 (CONFIG_ERROR)."""
+        self._init_project(tmp_path)
+        db_file = tmp_path / KONKON_DIR / "raw.db"
+        conn = sqlite3.connect(str(db_file))
+        conn.execute("PRAGMA user_version = 99")
+        conn.close()
+
+        runner = CliRunner()
+        result = runner.invoke(
+            main, ["-C", str(tmp_path), "insert", "hello"]
+        )
+        assert result.exit_code == 3
+        assert "schema version mismatch" in result.output

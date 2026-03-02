@@ -25,12 +25,13 @@ def init(
     *,
     force: bool = False,
     plugin: str | None = None,
+    raw_backend: str | None = None,
 ) -> None:
     """Initialize a konkon project.
 
     Delegates to core.instance.init_project().
     """
-    _init_project(directory, force=force, plugin=plugin)
+    _init_project(directory, force=force, plugin=plugin, raw_backend=raw_backend)
 
 
 def insert(

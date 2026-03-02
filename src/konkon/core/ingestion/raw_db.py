@@ -7,14 +7,18 @@ for plugin consumption via ACL #1.
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
-import struct
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-from konkon.core.models import JSONValue, RawRecord
+from konkon.core.ingestion.backend import (
+    format_datetime,
+    generate_uuid_v7,
+    parse_datetime,
+    validate_utc,
+)
+from konkon.core.models import ConfigError, JSONValue, RawRecord
 
 # -- DDL (03_data_model.md §12, Version 2) --
 
@@ -65,36 +69,12 @@ _SELECT_COLS = "id, created_at, updated_at, content, meta"
 
 
 # -- Internal helpers --
-
-
-def _generate_uuid_v7(now: datetime) -> str:
-    """Generate a UUID v7 string from the given UTC datetime."""
-    timestamp_ms = int(now.timestamp() * 1000)
-    ts_bytes = struct.pack(">Q", timestamp_ms)[2:]  # 48-bit timestamp
-    rand_a = os.urandom(2)
-    rand_b = os.urandom(8)
-    uuid_bytes = (
-        ts_bytes
-        + bytes([0x70 | (rand_a[0] & 0x0F), rand_a[1]])
-        + bytes([0x80 | (rand_b[0] & 0x3F)])
-        + rand_b[1:]
-    )
-    h = uuid_bytes.hex()
-    return f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
-
-
-def _format_datetime(dt: datetime) -> str:
-    """Format datetime as RFC3339 UTC fixed-width (27 chars).
-
-    Example: 2026-02-27T12:34:56.789012Z
-    """
-    utc_dt = dt.astimezone(timezone.utc)
-    return utc_dt.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
-
-
-def _parse_datetime(s: str) -> datetime:
-    """Parse RFC3339 UTC fixed-width string to UTC-aware datetime."""
-    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+# UUID v7, datetime formatting/parsing, and UTC validation
+# are shared with other backends via backend.py.
+# Aliases for backward compatibility within this module:
+_generate_uuid_v7 = generate_uuid_v7
+_format_datetime = format_datetime
+_parse_datetime = parse_datetime
 
 
 def _row_to_record(row: tuple) -> RawRecord:
@@ -166,10 +146,7 @@ class SqliteRawDataAccessor:
 
         Validates that *timestamp* is UTC-aware per 03_data_model.md §11.2.
         """
-        if timestamp.tzinfo is None:
-            raise ValueError("timestamp must be timezone-aware")
-        if timestamp.utcoffset() != timedelta(0):
-            raise ValueError("timestamp must be UTC")
+        validate_utc(timestamp)
         return SqliteRawDataAccessor(
             self._conn,
             since_ts=_format_datetime(timestamp),
@@ -182,10 +159,7 @@ class SqliteRawDataAccessor:
         Used by the framework for incremental builds (catches both new inserts
         and updates). Not part of the RawDataAccessor Protocol.
         """
-        if timestamp.tzinfo is None:
-            raise ValueError("timestamp must be timezone-aware")
-        if timestamp.utcoffset() != timedelta(0):
-            raise ValueError("timestamp must be UTC")
+        validate_utc(timestamp)
         return SqliteRawDataAccessor(
             self._conn,
             since_ts=self._since_ts,
@@ -225,7 +199,7 @@ class RawDB:
         elif version == 1:
             self._migrate_v1_to_v2()
         elif version > _CURRENT_VERSION:
-            raise RuntimeError(
+            raise ConfigError(
                 f"Raw DB schema version mismatch "
                 f"(expected: {_CURRENT_VERSION}, found: {version}). "
                 f"Please update konkon."

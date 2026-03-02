@@ -7,6 +7,7 @@ import click
 
 from konkon.application import build as app_build
 from konkon.core.instance import resolve_project
+from konkon.core.models import ConfigError
 
 
 def register(group: click.Group) -> None:
@@ -35,6 +36,9 @@ def build(ctx: click.Context, full: bool) -> None:
         start = Path(project_dir) if project_dir else None
         project_root = resolve_project(start)
         app_build(project_root, full=full)
+    except ConfigError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(3)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)

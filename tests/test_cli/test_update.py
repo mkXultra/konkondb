@@ -1,5 +1,6 @@
 """Tests for cli/update.py — konkon update command."""
 
+import sqlite3
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -73,3 +74,19 @@ class TestUpdateCommand:
             ["-C", str(tmp_path), "update", "some-id", "--content", "x"],
         )
         assert result.exit_code == 1
+
+    def test_update_schema_mismatch_exit_3(self, tmp_path: Path):
+        """Raw DB with unknown schema version → exit 3 (CONFIG_ERROR)."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        db_file = tmp_path / ".konkon" / "raw.db"
+        conn = sqlite3.connect(str(db_file))
+        conn.execute("PRAGMA user_version = 99")
+        conn.close()
+
+        result = runner.invoke(
+            main,
+            ["-C", str(tmp_path), "update", "some-id", "--content", "x"],
+        )
+        assert result.exit_code == 3
+        assert "schema version mismatch" in result.output

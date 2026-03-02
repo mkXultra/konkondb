@@ -8,6 +8,8 @@ import click
 
 from konkon.application import init as app_init
 
+_VALID_BACKENDS = ("sqlite", "json")
+
 
 def register(group: click.Group) -> None:
     """Register the init command to the CLI group."""
@@ -22,14 +24,31 @@ def register(group: click.Group) -> None:
     default=None,
     help="Plugin template path (relative to DIRECTORY).",
 )
-def init(directory: str, force: bool, plugin: str | None) -> None:
+@click.option(
+    "--raw-backend",
+    default=None,
+    help="Raw DB backend ('sqlite' or 'json') [default: sqlite]",
+)
+def init(directory: str, force: bool, plugin: str | None, raw_backend: str | None) -> None:
     """Create a konkon project in the specified directory.
 
     Generates plugin template and .konkon/ directory.
     Raw DB is NOT created here — it is lazily initialized on first insert.
     """
+    if raw_backend is not None and raw_backend not in _VALID_BACKENDS:
+        click.echo(
+            f"Error: Invalid value for '--raw-backend': "
+            f"'{raw_backend}' is not one of {', '.join(repr(b) for b in _VALID_BACKENDS)}.",
+            err=True,
+        )
+        sys.exit(2)
     try:
-        app_init(Path(directory).resolve(), force=force, plugin=plugin)
+        app_init(
+            Path(directory).resolve(),
+            force=force,
+            plugin=plugin,
+            raw_backend=raw_backend,
+        )
     except tomllib.TOMLDecodeError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(3)

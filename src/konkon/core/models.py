@@ -29,6 +29,10 @@ class QueryError(KonkonError):
     """Error during query phase."""
 
 
+class ConfigError(KonkonError):
+    """Configuration error (invalid backend, file conflicts, etc.)."""
+
+
 # ---------------------------------------------------------
 # Data models
 # ---------------------------------------------------------

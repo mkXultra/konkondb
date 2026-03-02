@@ -7,7 +7,7 @@ import click
 
 from konkon.application import search as app_search
 from konkon.core.instance import resolve_project
-from konkon.core.models import QueryResult
+from konkon.core.models import ConfigError, QueryResult
 
 
 def register(group: click.Group) -> None:
@@ -59,6 +59,9 @@ def search(ctx: click.Context, query: str, params: dict[str, str]) -> None:
             click.echo(result.content)
         else:
             click.echo(result)
+    except ConfigError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(3)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)

@@ -79,14 +79,37 @@ depends_on = []
 [[modules]]
 path = "konkon.core.ingestion"
 layer = "core"
-depends_on = ["konkon.core.ingestion.raw_db", "konkon.core.instance"]
+depends_on = [
+    "konkon.core.ingestion.backend",
+    "konkon.core.ingestion.raw_db",
+    "konkon.core.ingestion.json_db",
+    "konkon.core.instance",
+]
+
+# Backend protocol & shared utilities — ingestion internal
+[[modules]]
+path = "konkon.core.ingestion.backend"
+layer = "core"
+visibility = [
+    "konkon.core.ingestion",
+    "konkon.core.ingestion.raw_db",
+    "konkon.core.ingestion.json_db",
+]
+depends_on = []
 
 # Raw DB driver — only ingestion facade can access
 [[modules]]
 path = "konkon.core.ingestion.raw_db"
 layer = "core"
 visibility = ["konkon.core.ingestion"]
-depends_on = []
+depends_on = ["konkon.core.ingestion.backend"]
+
+# JSON DB driver — only ingestion facade can access
+[[modules]]
+path = "konkon.core.ingestion.json_db"
+layer = "core"
+visibility = ["konkon.core.ingestion"]
+depends_on = ["konkon.core.ingestion.backend"]
 
 # Transformation Context facade
 [[modules]]

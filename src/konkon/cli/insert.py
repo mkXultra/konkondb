@@ -7,6 +7,7 @@ import click
 
 from konkon.application import insert as app_insert
 from konkon.core.instance import resolve_project
+from konkon.core.models import ConfigError
 
 
 def register(group: click.Group) -> None:
@@ -64,6 +65,9 @@ def insert(ctx: click.Context, text: str | None, meta: tuple[str, ...]) -> None:
     except FileNotFoundError as e:
         click.echo(str(e), err=True)
         sys.exit(1)
+    except ConfigError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(3)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)

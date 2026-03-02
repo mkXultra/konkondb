@@ -7,6 +7,7 @@ import click
 
 from konkon.application import update as app_update
 from konkon.core.instance import resolve_project
+from konkon.core.models import ConfigError
 
 
 def _parse_meta(
@@ -78,6 +79,9 @@ def update_cmd(
     except KeyError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+    except ConfigError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(3)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)

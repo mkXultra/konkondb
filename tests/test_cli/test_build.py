@@ -1,5 +1,6 @@
 """Tests for cli/build.py — konkon build command (Step 9)."""
 
+import sqlite3
 import time
 from pathlib import Path
 
@@ -100,3 +101,16 @@ def query(request):
         # Full: all records
         runner.invoke(main, ["-C", str(tmp_path), "build", "--full"])
         assert (tmp_path / "count.txt").read_text() == "2"
+
+    def test_build_schema_mismatch_exit_3(self, tmp_path: Path):
+        """Raw DB with unknown schema version → exit 3 (CONFIG_ERROR)."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        db_file = tmp_path / ".konkon" / "raw.db"
+        conn = sqlite3.connect(str(db_file))
+        conn.execute("PRAGMA user_version = 99")
+        conn.close()
+
+        result = runner.invoke(main, ["-C", str(tmp_path), "build"])
+        assert result.exit_code == 3
+        assert "schema version mismatch" in result.output

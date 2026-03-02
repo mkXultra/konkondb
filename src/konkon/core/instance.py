@@ -26,6 +26,7 @@ from typing import Any
 
 KONKON_DIR = ".konkon"
 RAW_DB_NAME = "raw.db"
+JSON_DB_NAME = "raw.json"
 PLUGIN_FILE = "konkon.py"
 LAST_BUILD_FILE = "last_build"
 CONFIG_FILE = "config.toml"
@@ -172,6 +173,7 @@ def init_project(
     *,
     force: bool = False,
     plugin: str | None = None,
+    raw_backend: str | None = None,
 ) -> None:
     """Create a konkon project in *directory*.
 
@@ -181,6 +183,9 @@ def init_project(
 
     If plugin is specified, generates template at directory/plugin
     and writes plugin path to .konkon/config.toml.
+
+    If raw_backend is specified ('sqlite' or 'json'), writes it to
+    .konkon/config.toml.
     """
     if plugin is not None:
         _validate_plugin_arg(plugin)
@@ -213,9 +218,13 @@ def init_project(
     plugin_path.parent.mkdir(parents=True, exist_ok=True)
     plugin_path.write_text(PLUGIN_TEMPLATE)
 
-    if plugin is not None:
+    needs_config = plugin is not None or raw_backend is not None
+    if needs_config:
         existing = load_config(directory)
-        existing["plugin"] = plugin
+        if plugin is not None:
+            existing["plugin"] = plugin
+        if raw_backend is not None:
+            existing["raw_backend"] = raw_backend
         save_config(directory, existing)
 
 
@@ -293,6 +302,11 @@ def resolve_plugin_path(
 def raw_db_path(project_root: Path) -> Path:
     """Return the path to the Raw DB file under *project_root*/.konkon/."""
     return project_root / KONKON_DIR / RAW_DB_NAME
+
+
+def json_db_path(project_root: Path) -> Path:
+    """Return the path to the JSON DB file under *project_root*/.konkon/."""
+    return project_root / KONKON_DIR / JSON_DB_NAME
 
 
 def last_build_path(project_root: Path) -> Path:

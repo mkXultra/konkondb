@@ -8,6 +8,7 @@ import click
 
 from konkon.application import raw_get, raw_list
 from konkon.core.instance import resolve_project
+from konkon.core.models import ConfigError
 
 
 def register(group: click.Group) -> None:
@@ -61,8 +62,7 @@ def list_cmd(ctx: click.Context, limit: int, fmt: str | None) -> None:
 
     try:
         records = raw_list(project_root, limit=limit)
-    except RuntimeError as e:
-        # Schema version mismatch etc. — configuration error
+    except ConfigError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(3)
     except Exception as e:
@@ -117,8 +117,7 @@ def get_cmd(ctx: click.Context, record_id: str, fmt: str | None) -> None:
 
     try:
         record = raw_get(project_root, record_id)
-    except RuntimeError as e:
-        # Schema version mismatch etc. — configuration error
+    except ConfigError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(3)
     except Exception as e:

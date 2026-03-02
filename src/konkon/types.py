@@ -7,6 +7,7 @@ Usage:
 
 from konkon.core.models import (
     BuildError,
+    ConfigError,
     JSONValue,
     KonkonError,
     QueryError,
@@ -18,6 +19,7 @@ from konkon.core.models import (
 
 __all__ = [
     "BuildError",
+    "ConfigError",
     "JSONValue",
     "KonkonError",
     "QueryError",
