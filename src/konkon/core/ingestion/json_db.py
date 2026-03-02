@@ -250,6 +250,15 @@ class JsonDB:
         """
         return JsonRawDataAccessor(self._records)
 
+    def _write_record(self, record: RawRecord) -> None:
+        """Append a pre-built RawRecord preserving all original fields.
+
+        For migration use only. NOT part of RawDBBackend Protocol.
+        Does NOT call _save() — caller must call _sort_records() + _save()
+        after all records are written.
+        """
+        self._records.append(record)
+
     def close(self) -> None:
         """No-op. JSON backend has no connection to release."""
         pass

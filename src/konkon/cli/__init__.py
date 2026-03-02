@@ -9,7 +9,7 @@ import sys
 
 import click
 
-from konkon.cli import build, describe, init, insert, raw, search, serve, update
+from konkon.cli import build, describe, init, insert, migrate, raw, search, serve, update
 
 
 @click.group(invoke_without_command=True, context_settings={"max_content_width": 120})
@@ -64,5 +64,6 @@ build.register(main)
 search.register(main)
 describe.register(main)
 update.register(main)
+migrate.register(main)
 raw.register(main)
 serve.register(main)

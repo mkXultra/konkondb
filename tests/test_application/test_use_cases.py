@@ -4,17 +4,20 @@ from pathlib import Path
 
 import pytest
 
+import tomllib
+
 from konkon.application import (
     build,
     init,
     insert,
+    migrate,
     raw_get,
     raw_list,
     search,
     update,
 )
-from konkon.core.instance import init_project, save_config
-from konkon.core.models import BuildError, QueryResult
+from konkon.core.instance import init_project, load_config, save_config
+from konkon.core.models import BuildError, ConfigError, QueryResult
 
 
 def _setup_project(tmp_path: Path, plugin_code: str) -> Path:
@@ -330,3 +333,149 @@ class TestRawGet:
         _setup_project(tmp_path, NOOP_PLUGIN)
         insert("seed", None, tmp_path)
         assert raw_get(tmp_path, "nonexistent-id") is None
+
+
+class TestMigrate:
+    """migrate() — orchestrates data migration + config update."""
+
+    def test_migrate_updates_config(self, tmp_path: Path):
+        """After migration, config.toml raw_backend is updated."""
+        _setup_project(tmp_path, NOOP_PLUGIN)
+        save_config(tmp_path, {"raw_backend": "sqlite"})
+        insert("data", None, tmp_path)
+
+        migrate("json", tmp_path)
+
+        config = load_config(tmp_path)
+        assert config["raw_backend"] == "json"
+
+    def test_migrate_config_not_updated_on_failure(self, tmp_path: Path):
+        """On migration failure, config remains unchanged."""
+        _setup_project(tmp_path, NOOP_PLUGIN)
+        save_config(tmp_path, {"raw_backend": "sqlite"})
+        # Don't create the DB file — source doesn't exist
+
+        with pytest.raises(ConfigError):
+            migrate("json", tmp_path)
+
+        config = load_config(tmp_path)
+        assert config["raw_backend"] == "sqlite"
+
+    def test_migrate_preserves_other_config(self, tmp_path: Path):
+        """Migration preserves other config keys (e.g. plugin)."""
+        _setup_project(tmp_path, NOOP_PLUGIN)
+        save_config(tmp_path, {"raw_backend": "sqlite", "plugin": "konkon.py"})
+        insert("data", None, tmp_path)
+
+        migrate("json", tmp_path)
+
+        config = load_config(tmp_path)
+        assert config["raw_backend"] == "json"
+        assert config["plugin"] == "konkon.py"
+
+
+def _assert_records_match(before, after):
+    """Assert two record lists are identical (sorted by id for stable comparison)."""
+    assert len(before) == len(after)
+    before_sorted = sorted(before, key=lambda r: r.id)
+    after_sorted = sorted(after, key=lambda r: r.id)
+    for b, a in zip(before_sorted, after_sorted):
+        assert b.id == a.id
+        assert b.created_at == a.created_at
+        assert b.updated_at == a.updated_at
+        assert b.content == a.content
+        assert dict(b.meta) == dict(a.meta)
+
+
+class TestMigrateRoundTrip:
+    """Round-trip migration tests via Application Layer public API."""
+
+    def test_roundtrip_sqlite_to_json(self, tmp_path: Path):
+        """SQLite → JSON: raw_list() returns identical records."""
+        _setup_project(tmp_path, NOOP_PLUGIN)
+        save_config(tmp_path, {"raw_backend": "sqlite"})
+        insert("alpha", {"tag": "a"}, tmp_path)
+        insert("beta", {"tag": "b"}, tmp_path)
+        insert("gamma", None, tmp_path)
+
+        before = raw_list(tmp_path, limit=100)
+        migrate("json", tmp_path)
+        after = raw_list(tmp_path, limit=100)
+
+        _assert_records_match(before, after)
+
+    def test_roundtrip_json_to_sqlite(self, tmp_path: Path):
+        """JSON → SQLite: raw_list() returns identical records."""
+        _setup_project(tmp_path, NOOP_PLUGIN)
+        save_config(tmp_path, {"raw_backend": "json"})
+        insert("one", {"n": 1}, tmp_path)
+        insert("two", {"n": 2}, tmp_path)
+
+        before = raw_list(tmp_path, limit=100)
+        migrate("sqlite", tmp_path)
+        after = raw_list(tmp_path, limit=100)
+
+        _assert_records_match(before, after)
+
+    def test_roundtrip_escape_content(self, tmp_path: Path):
+        """Content with escape characters survives SQLite → JSON migration."""
+        _setup_project(tmp_path, NOOP_PLUGIN)
+        save_config(tmp_path, {"raw_backend": "sqlite"})
+
+        # Simulate `cat file | konkon insert` with tricky content
+        tricky_contents = [
+            "line1\nline2\nline3",                       # newlines
+            "col1\tcol2\tcol3",                           # tabs
+            "He said \"hello\" and 'goodbye'",            # quotes
+            "path\\to\\file",                             # backslashes
+            "emoji: \U0001f600 日本語テスト",               # unicode
+            'json-like: {"key": [1, 2, 3]}',             # JSON special chars
+            "back\\nslash-n vs real\nnewline",            # escaped vs real
+            "null\x00byte",                               # NULL byte
+            "",                                           # empty string
+            "   leading and trailing spaces   ",          # whitespace
+            'a' * 50_000,                                 # large content
+        ]
+
+        for content in tricky_contents:
+            insert(content, None, tmp_path)
+
+        before = raw_list(tmp_path, limit=100)
+        migrate("json", tmp_path)
+        after = raw_list(tmp_path, limit=100)
+
+        _assert_records_match(before, after)
+        # Also verify each record individually via raw_get
+        for rec in before:
+            got = raw_get(tmp_path, rec.id)
+            assert got is not None
+            assert got.content == rec.content
+
+    def test_roundtrip_escape_meta(self, tmp_path: Path):
+        """Meta with special characters survives JSON → SQLite migration."""
+        _setup_project(tmp_path, NOOP_PLUGIN)
+        save_config(tmp_path, {"raw_backend": "json"})
+
+        tricky_metas = [
+            {"path": "C:\\Users\\test\\file.txt"},
+            {"desc": "line1\nline2"},
+            {"quote": 'He said "hi"'},
+            {"unicode": "\U0001f600\u00e9\u00fc"},
+            {"nested": {"deep": {"list": [1, "two", None, True]}}},
+            {"empty_str": "", "empty_list": [], "null_val": None},
+            {"json_chars": '{"not": "parsed"}'},
+            {"tabs": "a\tb\tc"},
+        ]
+
+        for meta in tricky_metas:
+            insert("content", meta, tmp_path)
+
+        before = raw_list(tmp_path, limit=100)
+        migrate("sqlite", tmp_path)
+        after = raw_list(tmp_path, limit=100)
+
+        _assert_records_match(before, after)
+        for rec in before:
+            got = raw_get(tmp_path, rec.id)
+            assert got is not None
+            assert dict(got.meta) == dict(rec.meta)

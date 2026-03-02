@@ -13,10 +13,11 @@ from konkon.application.use_cases import (
     describe,
     init,
     insert,
+    migrate,
     raw_get,
     raw_list,
     search,
     update,
 )
 
-__all__ = ["build", "describe", "init", "insert", "raw_get", "raw_list", "search", "update"]
+__all__ = ["build", "describe", "init", "insert", "migrate", "raw_get", "raw_list", "search", "update"]

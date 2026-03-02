@@ -83,6 +83,7 @@ depends_on = [
     "konkon.core.ingestion.backend",
     "konkon.core.ingestion.raw_db",
     "konkon.core.ingestion.json_db",
+    "konkon.core.ingestion.migration",
     "konkon.core.instance",
 ]
 
@@ -97,19 +98,35 @@ visibility = [
 ]
 depends_on = []
 
-# Raw DB driver — only ingestion facade can access
+# Raw DB driver — ingestion facade + migration can access
 [[modules]]
 path = "konkon.core.ingestion.raw_db"
 layer = "core"
-visibility = ["konkon.core.ingestion"]
+visibility = [
+    "konkon.core.ingestion",
+    "konkon.core.ingestion.migration",
+]
 depends_on = ["konkon.core.ingestion.backend"]
 
-# JSON DB driver — only ingestion facade can access
+# JSON DB driver — ingestion facade + migration can access
 [[modules]]
 path = "konkon.core.ingestion.json_db"
 layer = "core"
-visibility = ["konkon.core.ingestion"]
+visibility = [
+    "konkon.core.ingestion",
+    "konkon.core.ingestion.migration",
+]
 depends_on = ["konkon.core.ingestion.backend"]
+
+# Migration logic — only ingestion facade can access
+[[modules]]
+path = "konkon.core.ingestion.migration"
+layer = "core"
+visibility = ["konkon.core.ingestion"]
+depends_on = [
+    "konkon.core.ingestion.raw_db",
+    "konkon.core.ingestion.json_db",
+]
 
 # Transformation Context facade
 [[modules]]

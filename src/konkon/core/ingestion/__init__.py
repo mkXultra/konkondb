@@ -29,6 +29,7 @@ from pathlib import Path
 
 from konkon.core.ingestion.backend import RawDBBackend
 from konkon.core.ingestion.json_db import JsonDB
+from konkon.core.ingestion.migration import run_migration
 from konkon.core.ingestion.raw_db import RawDB
 from konkon.core.instance import KONKON_DIR, load_config, raw_db_path
 from konkon.core.models import ConfigError, JSONValue, RawDataAccessor, RawRecord
@@ -202,3 +203,76 @@ def get_accessor(
     if modified_since is not None:
         accessor = accessor.modified_since(modified_since)
     return accessor
+
+
+def migrate(
+    project_root: Path,
+    target_backend: str,
+    *,
+    force: bool = False,
+) -> tuple[int, str]:
+    """Migrate all records from current backend to target backend.
+
+    Returns (migrated_count, source_backend).
+    Raises ConfigError for validation failures.
+
+    Does NOT update config.toml (caller's responsibility).
+    """
+    # 1. Validate target_backend
+    if target_backend not in ("sqlite", "json"):
+        raise ConfigError(
+            f"Unknown backend: {target_backend!r}. Use 'sqlite' or 'json'."
+        )
+
+    # 2. Resolve current backend
+    current_backend, _ = _resolve_backend(project_root)
+    if current_backend == target_backend:
+        raise ConfigError(
+            f"Already using {current_backend!r} backend. Nothing to migrate."
+        )
+
+    # 3. Validate source exists
+    if not _db_file_exists(project_root):
+        src_name = "raw.db" if current_backend == "sqlite" else "raw.json"
+        raise ConfigError(
+            f"Source database .konkon/{src_name} does not exist. "
+            f"Nothing to migrate."
+        )
+
+    # 4. Validate target does not exist (or --force)
+    target_path = (
+        _json_db_path(project_root) if target_backend == "json"
+        else raw_db_path(project_root)
+    )
+    if target_path.exists():
+        if not force:
+            raise FileExistsError(
+                f"Target file .konkon/{target_path.name} already exists. "
+                f"Use --force to overwrite."
+            )
+        print(
+            f"[WARN] Removing existing .konkon/{target_path.name} (--force)",
+            file=sys.stderr,
+        )
+        target_path.unlink()
+        # SQLite WAL mode may leave auxiliary files (03_data_model.md §8)
+        if target_backend == "sqlite":
+            for suffix in ("-wal", "-shm"):
+                aux = target_path.parent / (target_path.name + suffix)
+                if aux.exists():
+                    aux.unlink()
+
+    # 5. Execute migration
+    source = _open_db(project_root)
+    try:
+        if target_backend == "json":
+            target = JsonDB(target_path)
+        else:
+            target = RawDB(target_path)
+        try:
+            count = run_migration(source, target, target_backend)
+            return count, current_backend
+        finally:
+            target.close()
+    finally:
+        source.close()

@@ -322,6 +322,25 @@ class RawDB:
         """Return a RawDataAccessor over all records."""
         return SqliteRawDataAccessor(self._conn)
 
+    def _write_record(self, record: RawRecord) -> None:
+        """Insert a pre-built RawRecord preserving all original fields.
+
+        For migration use only. NOT part of RawDBBackend Protocol.
+        Does NOT call commit() — caller is responsible for transaction control.
+        """
+        meta_str = json.dumps(dict(record.meta)) if record.meta else None
+        self._conn.execute(
+            "INSERT INTO raw_records (id, created_at, updated_at, content, meta) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                record.id,
+                _format_datetime(record.created_at),
+                _format_datetime(record.updated_at or record.created_at),
+                record.content,
+                meta_str,
+            ),
+        )
+
     def close(self) -> None:
         """Close the underlying SQLite connection."""
         self._conn.close()

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from konkon.core import ingestion
 from konkon.core.instance import init_project as _init_project
-from konkon.core.instance import resolve_plugin_path
+from konkon.core.instance import load_config, resolve_plugin_path, save_config
 from konkon.core.models import JSONValue, QueryResult, RawRecord
 from konkon.core.transformation import run_build as _run_build
 from konkon.core.transformation import run_describe as _run_describe
@@ -140,3 +140,29 @@ def raw_get(
     Delegates to core.ingestion.get_record().
     """
     return ingestion.get_record(project_root, record_id)
+
+
+def migrate(
+    target_backend: str,
+    project_root: Path,
+    *,
+    force: bool = False,
+) -> tuple[int, str]:
+    """Migrate Raw DB to a different backend.
+
+    Orchestrates:
+    1. Data migration (Ingestion Context)
+    2. Config update (Instance)
+
+    Returns (migrated_count, source_backend).
+    """
+    count, source_backend = ingestion.migrate(
+        project_root, target_backend, force=force,
+    )
+
+    # Update config.toml with new backend
+    config = load_config(project_root)
+    config["raw_backend"] = target_backend
+    save_config(project_root, config)
+
+    return count, source_backend
