@@ -133,11 +133,14 @@ def _build_file_map(decl: dict, records: list, pool: ThreadPoolExecutor) -> list
     fields = decl["fields"]
     computed_fields = decl.get("computed_fields", {})
     fixed_entries = decl.get("fixed_entries", [])
+    fixed_paths = {e["file_path"] for e in fixed_entries}
     futures = {}
 
     for record in records:
         fp = record.meta.get("file_path", "")
         if not isinstance(fp, str) or not fp:
+            continue
+        if fp in fixed_paths:
             continue
 
         print(f"  FILEMAP {fp} ...", file=sys.stderr)

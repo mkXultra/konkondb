@@ -18,6 +18,9 @@ ROOT_DIR="$(cd "$ROOT_DIR" && pwd)"
 EXCLUDE_DIRS=".git|.konkon|__pycache__|.venv|.mypy_cache|.pytest_cache|.ruff_cache|.tox|build|dist|node_modules|.bk_docs|.egg-info|docs/design/claude|docs/design/codex|docs/design/gemini"
 INCLUDE_EXT='\.py$|\.md$|\.toml$|\.cfg$|\.txt$|\.yml$|\.yaml$|\.json$|\.rst$|\.ini$|\.sh$'
 
+# Files to insert once but never update (fixed entries in file_map)
+INSERT_ONLY_FILES="examples/konkondb/context.json|examples/konkondb/llm_cache.json"
+
 # --- Step 1: Build lookup of existing records as temp JSON ---
 echo "Loading existing records ..."
 RECORDS_FILE=$(mktemp)
@@ -50,6 +53,12 @@ while IFS= read -r filepath; do
   match=$(lookup_record "$rel_path")
 
   if [ -n "$match" ]; then
+    # insert-only files: skip if already exists
+    if echo "$rel_path" | grep -qE "^(${INSERT_ONLY_FILES})$"; then
+      skipped=$((skipped + 1))
+      continue
+    fi
+
     record_id=$(echo "$match" | cut -f1)
     old_hash=$(echo "$match" | cut -f2)
 
