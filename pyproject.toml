@@ -1,6 +1,6 @@
 [project]
 name = "konkondb"
-version = "0.1.0"
+version = "0.2.0"
 description = "AI-oriented context DB middleware — Pluggable engine between Raw Data and Context serving"
 readme = "README.md"
 authors = [
