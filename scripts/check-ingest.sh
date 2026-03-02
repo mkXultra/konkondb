@@ -17,6 +17,9 @@ ROOT_DIR="$(cd "$ROOT_DIR" && pwd)"
 EXCLUDE_DIRS=".git|.konkon|__pycache__|.venv|.mypy_cache|.pytest_cache|.ruff_cache|.tox|build|dist|node_modules|.bk_docs|.egg-info|docs/design/claude|docs/design/codex|docs/design/gemini"
 INCLUDE_EXT='\.py$|\.md$|\.toml$|\.cfg$|\.txt$|\.yml$|\.yaml$|\.json$|\.rst$|\.ini$|\.sh$'
 
+# Files that only need to exist (hash changes are ignored)
+INSERT_ONLY_FILES="examples/konkondb/context.json|examples/konkondb/llm_cache.json"
+
 # --- Step 1: Build lookup of existing records ---
 RECORDS_FILE=$(mktemp)
 trap 'rm -f "$RECORDS_FILE"' EXIT
@@ -44,6 +47,9 @@ while IFS= read -r filepath; do
   if [ -z "$match" ]; then
     echo "  MISSING $rel_path" >&2
     missing=$((missing + 1))
+  elif echo "$rel_path" | grep -qE "^(${INSERT_ONLY_FILES})$"; then
+    # insert-only: exists is enough, skip hash check
+    ok=$((ok + 1))
   else
     old_hash=$(echo "$match" | cut -f2)
 
