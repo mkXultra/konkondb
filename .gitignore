@@ -18,3 +18,11 @@ build/
 
 # konkon runtime
 *.db
+
+# design work
+docs/design/codex/*
+docs/design/gemini/*
+docs/design/claude/*
+
+# example output
+examples/json-export/context.json

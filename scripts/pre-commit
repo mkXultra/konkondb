@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "[pre-commit] Running: scripts/ingest.sh"
+
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+if ! "$REPO_ROOT/scripts/ingest.sh" "$REPO_ROOT"; then
+    echo "[pre-commit] FAILED: ingest.sh failed. Commit aborted." >&2
+    exit 1
+fi
+
+echo "[pre-commit] Running: uv run konkon build"
+
+if ! uv run konkon build; then
+    echo "[pre-commit] FAILED: konkon build failed. Commit aborted." >&2
+    exit 1
+fi
+
+git add .konkon/ examples/konkondb/context.json examples/konkondb/llm_cache.json
+
+echo "[pre-commit] OK"

@@ -8,7 +8,7 @@ Responsibilities:
 - Stateless — no direct access to Raw DB or Context Store
 
 References:
-- 04_cli_design.md §4.5 (serve --api)
+- commands/serve-api.md
 - 06_serving_adapters.md (TBD)
 
 Framework: TBD (FastAPI / Starlette / http.server — see 05 §7)

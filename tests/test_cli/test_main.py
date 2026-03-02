@@ -22,7 +22,7 @@ class TestCLIFramework:
 
 
 class TestHelpCommand:
-    """Step 5: konkon help [COMMAND] (04_cli_design.md §4.0)."""
+    """Step 5: konkon help [COMMAND] (commands/help.md)."""
 
     def test_help_no_args_shows_commands(self):
         """konkon help — shows all commands overview."""

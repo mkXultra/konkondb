@@ -29,6 +29,10 @@ class QueryError(KonkonError):
     """Error during query phase."""
 
 
+class ConfigError(KonkonError):
+    """Configuration error (invalid backend, file conflicts, etc.)."""
+
+
 # ---------------------------------------------------------
 # Data models
 # ---------------------------------------------------------
@@ -42,6 +46,7 @@ class RawRecord:
     created_at: datetime  # UTC-aware
     content: str
     meta: Mapping[str, JSONValue] = field(default_factory=dict)
+    updated_at: datetime | None = None  # UTC-aware; None → same as created_at
 
     @property
     def source_uri(self) -> str | None:

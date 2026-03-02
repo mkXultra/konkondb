@@ -1,5 +1,7 @@
 """Tests for cli/build.py — konkon build command (Step 9)."""
 
+import sqlite3
+import time
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -41,6 +43,9 @@ class TestBuildCommand:
         _write_plugin(tmp_path, """\
 from konkon.core.models import BuildError
 
+def schema():
+    return {"description": "test", "params": {}}
+
 def build(raw_data):
     raise BuildError("vector store unreachable")
 
@@ -56,9 +61,56 @@ def query(request):
         runner = CliRunner()
         _init_project(runner, tmp_path)
         _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
 def query(request):
     return ""
 """)
         result = runner.invoke(main, ["-C", str(tmp_path), "build"])
         assert result.exit_code == 1
         assert "build" in result.output
+
+    def test_build_full_flag(self, tmp_path: Path):
+        """konkon build --full passes all records even after prior build."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        _write_plugin(tmp_path, """\
+from pathlib import Path
+
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data):
+    Path("count.txt").write_text(str(len(list(raw_data))))
+
+def query(request):
+    return ""
+""")
+        runner.invoke(main, ["-C", str(tmp_path), "insert", "one"])
+        runner.invoke(main, ["-C", str(tmp_path), "build"])
+        assert (tmp_path / "count.txt").read_text() == "1"
+
+        time.sleep(0.01)
+        runner.invoke(main, ["-C", str(tmp_path), "insert", "two"])
+
+        # Incremental: only new record
+        runner.invoke(main, ["-C", str(tmp_path), "build"])
+        assert (tmp_path / "count.txt").read_text() == "1"
+
+        # Full: all records
+        runner.invoke(main, ["-C", str(tmp_path), "build", "--full"])
+        assert (tmp_path / "count.txt").read_text() == "2"
+
+    def test_build_schema_mismatch_exit_3(self, tmp_path: Path):
+        """Raw DB with unknown schema version → exit 3 (CONFIG_ERROR)."""
+        runner = CliRunner()
+        _init_project(runner, tmp_path)
+        db_file = tmp_path / ".konkon" / "raw.db"
+        conn = sqlite3.connect(str(db_file))
+        conn.execute("PRAGMA user_version = 99")
+        conn.close()
+
+        result = runner.invoke(main, ["-C", str(tmp_path), "build"])
+        assert result.exit_code == 3
+        assert "schema version mismatch" in result.output

@@ -8,7 +8,7 @@ Responsibilities:
 - Stateless — no direct access to Raw DB or Context Store
 
 References:
-- 04_cli_design.md §4.5 (serve --mcp)
+- commands/serve-mcp.md
 - 06_serving_adapters.md (TBD)
 
 SDK: TBD (mcp official SDK / custom — see 05 §8)

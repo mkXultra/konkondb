@@ -23,6 +23,7 @@ It receives RawDataAccessor as a parameter (protocol-based dependency).
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -34,7 +35,7 @@ from types import ModuleType
 # so this import is allowed.
 from konkon.core.models import BuildError, KonkonError, QueryError, QueryResult
 
-_REQUIRED_FUNCTIONS = ("build", "query")
+_REQUIRED_FUNCTIONS = ("build", "query", "schema")
 
 
 def load_plugin(path: Path) -> ModuleType:
@@ -47,20 +48,26 @@ def load_plugin(path: Path) -> ModuleType:
     if not path.exists():
         raise FileNotFoundError(f"Plugin file not found: {path}")
 
+    # Add plugin directory to sys.path so sibling modules (e.g. targets.py)
+    # can be imported by the plugin.
+    plugin_dir = str(path.parent.resolve())
+    if plugin_dir not in sys.path:
+        sys.path.insert(0, plugin_dir)
+
     spec = importlib.util.spec_from_file_location("konkon_plugin", str(path))
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    # Validate Plugin Contract: both build() and query() must exist and be callable
+    # Validate Plugin Contract: build(), query(), schema() must exist and be callable
     missing = [
         fn for fn in _REQUIRED_FUNCTIONS
         if not callable(getattr(module, fn, None))
     ]
     if missing:
         raise ValueError(
-            f"Plugin contract violation — {path.name} must define both "
-            f"'build()' and 'query()' functions. Missing: {', '.join(missing)}"
+            f"Plugin contract violation — {path.name} must define "
+            f"'build()', 'query()', and 'schema()' functions. Missing: {', '.join(missing)}"
         )
 
     return module
@@ -78,6 +85,25 @@ def invoke_build(plugin: ModuleType, raw_data: object) -> None:
         raise
     except Exception as exc:
         raise BuildError(str(exc)) from exc
+
+
+def invoke_schema(plugin: ModuleType) -> dict:
+    """Call plugin.schema() and return the schema dict.
+
+    schema() errors are configuration-level (exit 3), so exceptions
+    are wrapped as ValueError.  Uses ValueError (not a KonkonError subclass)
+    because schema violations are config/contract errors; a dedicated
+    ConfigError may replace this in the future.
+    """
+    try:
+        result = plugin.schema()
+    except Exception as exc:
+        raise ValueError(f"schema() failed: {exc}") from exc
+    if not isinstance(result, dict):
+        raise ValueError(
+            f"schema() must return dict, got {type(result).__name__}"
+        )
+    return result
 
 
 def invoke_query(plugin: ModuleType, request: object) -> str | QueryResult:

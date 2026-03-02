@@ -12,10 +12,10 @@
 | :--- | :--- | :--- | :--- |
 | — | 言語 | Python | PRD / concept.md |
 | — | DB | SQLite 3.38+ | 03_data_model.md（`json_valid()` に 3.38+ が必要） |
-| — | コマンド体系 | `help`, `init`, `insert`, `build`, `search`, `serve` | 04_cli_design.md（`ask` は MVP 外・将来拡張） |
-| — | Plugin 契約 | `build(raw_data: RawDataAccessor) -> None`, `query(request: QueryRequest) -> str \| QueryResult` | 02_interface_contracts.md |
-| — | Raw DB スキーマ | `raw_records` テーブル（`id`, `created_at`, `content`, `meta`） | 03_data_model.md |
-| — | 出力形式 | `text` / `json`、TTY 自動検出 | 04_cli_design.md |
+| — | コマンド体系 | [commands/](./commands/) 参照 | 04_cli_conventions.md |
+| — | Plugin 契約 | [02_interface_contracts.md §1](./02_interface_contracts.md) 参照 | 02_interface_contracts.md |
+| — | Raw DB スキーマ | [03_data_model.md §7](./03_data_model.md) 参照 | 03_data_model.md |
+| — | 出力形式 | [04_cli_conventions.md §2.2](./04_cli_conventions.md) 参照 | 04_cli_conventions.md |
 | 1 | CLI フレームワーク | `click` | サブコマンド構成との相性、`CliRunner` によるテスト容易性、Datasette 等の採用実績 |
 | 2 | プロジェクトマネージャ | `uv` | Rust 製で高速、ロックファイルあり、pip 互換、`uv run` で Poetry 相当の DX |
 | 3 | パッケージ構成 | src レイアウト | import 安全性（未インストール時の誤 import 防止） |
@@ -48,48 +48,75 @@ konkondb/                       # プロジェクトルート (git root)
 │       │                       #   RawDataAccessor, RawRecord,
 │       │                       #   QueryRequest, QueryResult,
 │       │                       #   KonkonError, BuildError, QueryError
-│       ├── cli/                # CLI層 (click)
+│       ├── application/        # Application Layer (注2)
+│       │   ├── __init__.py     #   Use Case の公開 API
+│       │   └── use_cases.py    #   Thin Orchestrator (Context Facade の呼び出し調停)
+│       ├── cli/                # CLI Entry (click)
 │       │   ├── __init__.py     #   main group + エントリポイント
-│       │   ├── help.py
 │       │   ├── init.py
 │       │   ├── insert.py
+│       │   ├── update.py
 │       │   ├── build.py
 │       │   ├── search.py
+│       │   ├── raw.py          #   raw サブコマンドグループ (raw list 等)
 │       │   └── serve.py        #   serve api / serve mcp サブコマンド
-│       ├── core/               # コアロジック (注1)
+│       ├── core/               # コアロジック
 │       │   ├── __init__.py
-│       │   ├── raw_db.py       #   Raw DB アクセス (RawDataAccessor 実装)
-│       │   ├── plugin_host.py  #   Plugin ロード・実行
-│       │   └── models.py       #   RawRecord, QueryRequest, QueryResult 等の定義
-│       └── serving/            # Serving層 (注2)
+│       │   ├── models.py       #   RawRecord, QueryRequest, QueryResult 等の定義
+│       │   ├── instance.py     #   プロジェクトルート解決、パス定数
+│       │   ├── ingestion/      #   Ingestion Context (Raw DB)
+│       │   │   ├── __init__.py #     facade (ingest, update, list_records, get_accessor)
+│       │   │   └── raw_db.py   #     Raw DB アクセス (RawDataAccessor 実装)
+│       │   └── transformation/ #   Transformation Context (Plugin Host)
+│       │       ├── __init__.py #     facade (run_build, run_query)
+│       │       └── plugin_host.py  # Plugin ロード・実行
+│       └── serving/            # Serving層 (注1)
 │           ├── __init__.py
 │           ├── api.py          #   REST API サーバー
 │           └── mcp.py          #   MCP サーバー
 └── tests/
     ├── conftest.py
     ├── test_cli/
+    ├── test_application/
     ├── test_core/
     └── test_serving/
 ```
 
 参考: [Datasette](https://github.com/simonw/datasette) — SQLite ベースの CLI + API サーバー (click 採用)
 
-### 注1: `core/` パッケージと Bounded Context
+### `application/` パッケージと Application Layer
 
-`core/` には Ingestion Context（`raw_db.py`）と Transformation Context（`plugin_host.py`）が同居している。01_conceptual_architecture.md で定義された Bounded Context の分離は、パッケージ分割ではなくモジュール間の import 規約で担保する:
+`application/` は 01_conceptual_architecture.md §3.5 で定義された Application Layer に対応する。BC をまたぐユースケースの調停（Thin Orchestrator）を担い、各 Context Facade を呼び出すだけでドメインロジックを持たない:
 
-- `plugin_host.py` は `raw_db.py` の内部実装（SQL、テーブル名等）に直接依存してはならない
+- **`application/use_cases.py`**: Use Case の実装。Ingestion Facade / Transformation Facade を順序付けて呼び出し、結果を組み立てる
+- **`application/__init__.py`**: Use Case の公開 API
+
+依存方向: `cli/` → `application/` → `core/`（各 Context Facade）。`application/` は `serving/` に依存しない。
+
+### `core/` パッケージと Bounded Context
+
+`core/` は 01_conceptual_architecture.md で定義された Bounded Context に対応し、`ingestion/` と `transformation/` の2サブパッケージに分割されている:
+
+- **`core/ingestion/`**: Ingestion Context。Raw DB へのアクセスを担う。facade（`__init__.py`）が `ingest`, `update`, `list_records`, `get_accessor` を公開
+- **`core/transformation/`**: Transformation Context。Plugin Host と build/query のオーケストレーションを担う。facade（`__init__.py`）が `run_build`, `run_query` を公開
+- **`core/instance.py`**: プロジェクトルートの解決（`resolve_project()`）やパス定数（`KONKON_DIR`, `RAW_DB_FILE` 等）を提供するシステムレベルのモジュール
+
+ACL の担保:
+- `transformation/` は `ingestion/` の facade 経由でのみ Raw DB にアクセスする（`raw_db.py` の内部実装に直接依存しない）
 - 両者間のデータ受け渡しは `RawDataAccessor` プロトコル（ACL #1）を経由する
+- モジュール境界は `tach.toml` で静的に検証される
 
-ファイル数の増加に伴い `core/` を `ingestion/` + `transformation/` に分割する可能性がある。
+### 注2: `application/` パッケージの確定範囲
 
-### 注2: `serving/` パッケージの確定範囲
+`application/` は 01_conceptual_architecture.md §3.5 の Application Layer に対応する。CLI Entry（`cli/`）と Lib Entry（将来の `lib/` 相当）は Application Layer の Entry Point であり、`application/use_cases.py` の Use Case を呼び出す。ファイル構成は実装時に調整される可能性がある。
+
+### 注1: `serving/` パッケージの確定範囲
 
 `serving/` のディレクトリ名とファイル名（`api.py`, `mcp.py`）は仮確定。01_conceptual_architecture.md の Serving Context に対応し、ステートレスなプロトコルアダプターとして機能する。内部で使用する HTTP フレームワーク（7. Serving 実装）と MCP SDK（8. MCP SDK）は未選定であり、06_serving_adapters.md の設計時に確定する。
 
 ### Plugin 開発者の公開 API (`konkon.types`)
 
-`types.py` は `core/models.py` で定義された型と例外を re-export する薄いモジュール。Plugin 開発者は以下のインポートパスを使用する（04_cli_design.md の `konkon init` テンプレートと一致）:
+`types.py` は `core/models.py` で定義された型と例外を re-export する薄いモジュール。Plugin 開発者は以下のインポートパスを使用する（[commands/init.md](./commands/init.md) の `konkon init` テンプレートと一致）:
 
 ```python
 from konkon.types import RawDataAccessor, QueryRequest, QueryResult
