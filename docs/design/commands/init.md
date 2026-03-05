@@ -44,16 +44,21 @@ konkon init [OPTIONS] [DIRECTORY]
 ```python
 """konkon db plugin — build() と query() を実装してください。"""
 
-from konkon.types import RawDataAccessor, QueryRequest, QueryResult
+from konkon.types import RawDataAccessor, BuildContext, QueryRequest, QueryResult
 
 
-def build(raw_data: RawDataAccessor) -> None:
+def build(raw_data: RawDataAccessor, context: BuildContext) -> None:
     """
     Raw Data から Context Store を構築します。
-    raw_data をイテレートして、あなた独自の Context DB を作成してください。
+
+    context.mode:
+        "full"        — raw_data は全レコードです。Context Store を全再構築してください。
+        "incremental" — raw_data は前回ビルド以降の変更分のみです。
+                        あわせて、context.deleted_records に含まれるレコード（id/meta）を
+                        Context Store から除去してください。
     """
     for record in raw_data:
-        # record.id, record.content, record.created_at 等が利用可能
+        # record.id, record.content, record.created_at, record.meta 等が利用可能
         pass
 
 

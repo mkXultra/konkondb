@@ -26,7 +26,7 @@ class TestRunBuild:
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -46,7 +46,7 @@ from pathlib import Path
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     records = list(raw_data)
     Path("build_result.json").write_text(
         json.dumps([r.content for r in records])
@@ -74,7 +74,7 @@ from konkon.core.models import BuildError
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     raise BuildError("db connection failed")
 
 def query(request):
@@ -93,7 +93,7 @@ class TestRunDescribe:
 def schema():
     return {"description": "test plugin", "params": {"q": {"type": "string"}}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -110,7 +110,7 @@ def query(request):
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -137,7 +137,7 @@ class TestRunQuery:
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -154,7 +154,7 @@ from konkon.core.models import QueryResult
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -173,7 +173,7 @@ from konkon.core.models import QueryResult
 def schema():
     return {"description": "test", "params": {"limit": {"type": "integer"}}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -199,7 +199,7 @@ from pathlib import Path
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     records = list(raw_data)
     Path("build_count.txt").write_text(str(len(records)))
 
@@ -222,7 +222,7 @@ from pathlib import Path
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     records = list(raw_data)
     Path("build_count.txt").write_text(str(len(records)))
 
@@ -250,7 +250,7 @@ from pathlib import Path
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     records = list(raw_data)
     Path("build_count.txt").write_text(str(len(records)))
 
@@ -271,7 +271,7 @@ def query(request):
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -292,7 +292,7 @@ from pathlib import Path
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     records = list(raw_data)
     Path("build_contents.json").write_text(
         json.dumps([r.content for r in records])
@@ -336,7 +336,7 @@ from konkon.core.ingestion import ingest as _ingest
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     records = list(raw_data)
     Path("build_ids.json").write_text(
         json.dumps([r.content for r in records])
@@ -358,3 +358,203 @@ def query(request):
             (tmp_path / "build_ids.json").read_text()
         )
         assert "during-build" in contents
+
+
+class TestBuildContext:
+    """run_build passes correct BuildContext to plugin."""
+
+    def test_first_build_passes_full_mode(self, tmp_path: Path):
+        """First build (no last_build) passes mode='full'."""
+        _setup_project(tmp_path, """\
+import json
+from pathlib import Path
+
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data, context):
+    Path("context_mode.txt").write_text(context.mode)
+
+def query(request):
+    return ""
+""")
+        run_build(tmp_path)
+        assert (tmp_path / "context_mode.txt").read_text() == "full"
+
+    def test_second_build_passes_incremental_mode(self, tmp_path: Path):
+        """Second build passes mode='incremental'."""
+        _setup_project(tmp_path, """\
+import json
+from pathlib import Path
+
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data, context):
+    Path("context_mode.txt").write_text(context.mode)
+
+def query(request):
+    return ""
+""")
+        run_build(tmp_path)
+        assert (tmp_path / "context_mode.txt").read_text() == "full"
+
+        run_build(tmp_path)
+        assert (tmp_path / "context_mode.txt").read_text() == "incremental"
+
+    def test_full_flag_overrides_incremental(self, tmp_path: Path):
+        """--full always passes mode='full'."""
+        _setup_project(tmp_path, """\
+from pathlib import Path
+
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data, context):
+    Path("context_mode.txt").write_text(context.mode)
+
+def query(request):
+    return ""
+""")
+        run_build(tmp_path)
+        run_build(tmp_path, full=True)
+        assert (tmp_path / "context_mode.txt").read_text() == "full"
+
+    def test_incremental_build_includes_deleted_records(self, tmp_path: Path):
+        """Incremental build passes deleted records in context."""
+        from konkon.core.ingestion import ingest
+
+        _setup_project(tmp_path, """\
+import json
+from pathlib import Path
+
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data, context):
+    Path("deleted_ids.json").write_text(
+        json.dumps([d.id for d in context.deleted_records])
+    )
+
+def query(request):
+    return ""
+""")
+        r1 = ingest("first", {"key": "val"}, tmp_path)
+        run_build(tmp_path)
+
+        # Delete after first build
+        from konkon.core.ingestion import delete
+        time.sleep(0.01)
+        delete(r1.id, tmp_path)
+
+        run_build(tmp_path)
+
+        import json as json_mod
+        deleted_ids = json_mod.loads(
+            (tmp_path / "deleted_ids.json").read_text()
+        )
+        assert r1.id in deleted_ids
+
+    def test_full_build_has_empty_deleted_records(self, tmp_path: Path):
+        """Full build always has empty deleted_records."""
+        from konkon.core.ingestion import ingest
+
+        _setup_project(tmp_path, """\
+import json
+from pathlib import Path
+
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data, context):
+    Path("deleted_count.txt").write_text(str(len(context.deleted_records)))
+
+def query(request):
+    return ""
+""")
+        r1 = ingest("first", None, tmp_path)
+        run_build(tmp_path)
+
+        from konkon.core.ingestion import delete
+        time.sleep(0.01)
+        delete(r1.id, tmp_path)
+
+        run_build(tmp_path, full=True)
+        assert (tmp_path / "deleted_count.txt").read_text() == "0"
+
+
+class TestTombstonePurge:
+    """Tombstone purge after successful build."""
+
+    def test_tombstones_purged_after_successful_build(self, tmp_path: Path):
+        """Tombstones are purged after a successful build."""
+        from datetime import timezone
+        from konkon.core.ingestion import delete, get_deleted_records_since, ingest
+
+        _setup_project(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data, context):
+    pass
+
+def query(request):
+    return ""
+""")
+        r1 = ingest("first", None, tmp_path)
+        run_build(tmp_path)
+
+        time.sleep(0.01)
+        delete(r1.id, tmp_path)
+
+        # Tombstone exists before build
+        from datetime import datetime
+        early = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        assert len(get_deleted_records_since(tmp_path, early)) == 1
+
+        run_build(tmp_path)
+
+        # Tombstone purged after successful build
+        assert len(get_deleted_records_since(tmp_path, early)) == 0
+
+    def test_tombstones_not_purged_on_build_failure(self, tmp_path: Path):
+        """Tombstones survive when build() fails."""
+        from datetime import datetime, timezone
+        from konkon.core.ingestion import delete, get_deleted_records_since, ingest
+
+        # Start with a succeeding plugin so we can do the first build
+        _setup_project(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data, context):
+    pass
+
+def query(request):
+    return ""
+""")
+        r1 = ingest("first", None, tmp_path)
+        run_build(tmp_path)
+
+        time.sleep(0.01)
+        delete(r1.id, tmp_path)
+
+        # Now switch to failing plugin
+        (tmp_path / "konkon.py").write_text("""\
+from konkon.core.models import BuildError
+
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data, context):
+    raise BuildError("fail on purpose")
+
+def query(request):
+    return ""
+""")
+        with pytest.raises(BuildError):
+            run_build(tmp_path)
+
+        # Tombstone should still exist
+        early = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        assert len(get_deleted_records_since(tmp_path, early)) == 1

@@ -46,7 +46,7 @@ from konkon.core.models import BuildError
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     raise BuildError("vector store unreachable")
 
 def query(request):
@@ -81,7 +81,7 @@ from pathlib import Path
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     Path("count.txt").write_text(str(len(list(raw_data))))
 
 def query(request):

@@ -32,7 +32,13 @@ from konkon.core.ingestion.json_db import JsonDB
 from konkon.core.ingestion.migration import run_migration
 from konkon.core.ingestion.raw_db import RawDB
 from konkon.core.instance import KONKON_DIR, load_config, raw_db_path
-from konkon.core.models import ConfigError, JSONValue, RawDataAccessor, RawRecord
+from konkon.core.models import (
+    ConfigError,
+    DeletedRecord,
+    JSONValue,
+    RawDataAccessor,
+    RawRecord,
+)
 
 _JSON_DB_NAME = "raw.json"
 
@@ -203,6 +209,44 @@ def get_accessor(
     if modified_since is not None:
         accessor = accessor.modified_since(modified_since)
     return accessor
+
+
+def delete(record_id: str, project_root: Path) -> None:
+    """Delete a record and create a tombstone.
+
+    Raises KeyError if not found. Does NOT create DB if missing.
+    """
+    if not _db_file_exists(project_root):
+        raise KeyError(f"record not found: {record_id}")
+    db = _open_db(project_root)
+    try:
+        db.delete(record_id)
+    finally:
+        db.close()
+
+
+def get_deleted_records_since(
+    project_root: Path, since: datetime
+) -> list[DeletedRecord]:
+    """Return DeletedRecords deleted after timestamp. Empty list if DB missing."""
+    if not _db_file_exists(project_root):
+        return []
+    db = _open_db(project_root)
+    try:
+        return db.get_deleted_records_since(since)
+    finally:
+        db.close()
+
+
+def purge_tombstones(project_root: Path, before: datetime) -> int:
+    """Remove old tombstones. Returns 0 if DB missing."""
+    if not _db_file_exists(project_root):
+        return 0
+    db = _open_db(project_root)
+    try:
+        return db.purge_tombstones(before)
+    finally:
+        db.close()
 
 
 def migrate(

@@ -23,6 +23,7 @@ It receives RawDataAccessor as a parameter (protocol-based dependency).
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -33,7 +34,7 @@ from types import ModuleType
 # However, plugin_host has depends_on=[] in tach, meaning it cannot
 # import from any non-utility konkon module. core.models IS utility=true,
 # so this import is allowed.
-from konkon.core.models import BuildError, KonkonError, QueryError, QueryResult
+from konkon.core.models import BuildError, ConfigError, KonkonError, QueryError, QueryResult
 
 _REQUIRED_FUNCTIONS = ("build", "query", "schema")
 
@@ -70,17 +71,48 @@ def load_plugin(path: Path) -> ModuleType:
             f"'build()', 'query()', and 'schema()' functions. Missing: {', '.join(missing)}"
         )
 
+    # Validate build() signature: exactly 2 required positional parameters,
+    # no required keyword-only parameters (06_build_context.md §3.2)
+    _validate_build_signature(module, path)
+
     return module
 
 
-def invoke_build(plugin: ModuleType, raw_data: object) -> None:
-    """Call plugin.build(raw_data).
+def _validate_build_signature(module: ModuleType, path: Path) -> None:
+    """Validate that build() has exactly 2 required positional params."""
+    sig = inspect.signature(module.build)
+    required_positional = [
+        p for p in sig.parameters.values()
+        if p.kind in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        )
+        and p.default is inspect.Parameter.empty
+    ]
+    required_keyword_only = [
+        p for p in sig.parameters.values()
+        if p.kind == inspect.Parameter.KEYWORD_ONLY
+        and p.default is inspect.Parameter.empty
+    ]
+
+    if len(required_positional) != 2 or required_keyword_only:
+        raise ConfigError(
+            f"Contract violation: build() must have exactly 2 required positional parameters "
+            f"(raw_data, context) and no required keyword-only parameters, "
+            f"got {len(required_positional)} positional, "
+            f"{len(required_keyword_only)} keyword-only. "
+            f"Update your plugin: def build(raw_data, context): ..."
+        )
+
+
+def invoke_build(plugin: ModuleType, raw_data: object, context: object) -> None:
+    """Call plugin.build(raw_data, context).
 
     KonkonError subclasses (e.g. BuildError) propagate unchanged.
     Other exceptions are wrapped as BuildError.
     """
     try:
-        plugin.build(raw_data)
+        plugin.build(raw_data, context)
     except KonkonError:
         raise
     except Exception as exc:

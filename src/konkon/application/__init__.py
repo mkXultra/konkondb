@@ -10,6 +10,7 @@ References:
 
 from konkon.application.use_cases import (
     build,
+    delete,
     describe,
     init,
     insert,
@@ -20,4 +21,4 @@ from konkon.application.use_cases import (
     update,
 )
 
-__all__ = ["build", "describe", "init", "insert", "migrate", "raw_get", "raw_list", "search", "update"]
+__all__ = ["build", "delete", "describe", "init", "insert", "migrate", "raw_get", "raw_list", "search", "update"]

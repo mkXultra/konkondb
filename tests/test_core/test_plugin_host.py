@@ -5,7 +5,7 @@ from types import ModuleType
 
 import pytest
 
-from konkon.core.models import BuildError, QueryError, QueryResult
+from konkon.core.models import BuildError, ConfigError, QueryError, QueryResult
 from konkon.core.transformation.plugin_host import invoke_build, invoke_query, invoke_schema, load_plugin
 
 
@@ -25,7 +25,7 @@ class TestLoadPlugin:
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -54,7 +54,7 @@ def query(request):
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 """)
         with pytest.raises(ValueError, match="query"):
@@ -80,6 +80,70 @@ def query(request):
             load_plugin(plugin_path)
 
 
+class TestBuildContractValidation:
+    """build() signature validation (06_build_context.md §3.2)."""
+
+    def test_rejects_v1_single_arg_build(self, tmp_path: Path):
+        """build(raw_data) with 1 required arg raises ConfigError."""
+        plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data):
+    pass
+
+def query(request):
+    return ""
+""")
+        with pytest.raises(ConfigError, match="2 required positional"):
+            load_plugin(plugin_path)
+
+    def test_rejects_zero_arg_build(self, tmp_path: Path):
+        """build() with 0 required args raises ConfigError."""
+        plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
+def build():
+    pass
+
+def query(request):
+    return ""
+""")
+        with pytest.raises(ConfigError, match="2 required positional"):
+            load_plugin(plugin_path)
+
+    def test_rejects_required_keyword_only(self, tmp_path: Path):
+        """build(raw_data, context, *, required_kw) raises ConfigError."""
+        plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data, context, *, required_kw):
+    pass
+
+def query(request):
+    return ""
+""")
+        with pytest.raises(ConfigError, match="keyword-only"):
+            load_plugin(plugin_path)
+
+    def test_accepts_extra_optional_params(self, tmp_path: Path):
+        """build(raw_data, context, optional=None) is valid."""
+        plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data, context, optional=None):
+    pass
+
+def query(request):
+    return ""
+""")
+        module = load_plugin(plugin_path)
+        assert callable(module.build)
+
+
 class TestInvokeBuild:
     """invoke_build(plugin, raw_data) — call plugin.build() with accessor."""
 
@@ -91,7 +155,7 @@ received = None
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     global received
     received = raw_data
 
@@ -100,7 +164,7 @@ def query(request):
 """)
         module = load_plugin(plugin_path)
         sentinel = object()
-        invoke_build(module, sentinel)
+        invoke_build(module, sentinel, None)
         assert module.received is sentinel
 
     def test_build_error_propagates(self, tmp_path: Path):
@@ -111,7 +175,7 @@ from konkon.core.models import BuildError
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     raise BuildError("vector DB down")
 
 def query(request):
@@ -119,7 +183,7 @@ def query(request):
 """)
         module = load_plugin(plugin_path)
         with pytest.raises(BuildError, match="vector DB down"):
-            invoke_build(module, None)
+            invoke_build(module, None, None)
 
     def test_unexpected_exception_wrapped(self, tmp_path: Path):
         """Non-KonkonError from plugin.build() is wrapped as BuildError."""
@@ -127,7 +191,7 @@ def query(request):
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     raise KeyError("missing_key")
 
 def query(request):
@@ -135,7 +199,7 @@ def query(request):
 """)
         module = load_plugin(plugin_path)
         with pytest.raises(BuildError, match="missing_key"):
-            invoke_build(module, None)
+            invoke_build(module, None, None)
 
 
 class TestInvokeQuery:
@@ -147,7 +211,7 @@ class TestInvokeQuery:
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -166,7 +230,7 @@ from konkon.core.models import QueryResult
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -186,7 +250,7 @@ from konkon.core.models import QueryError
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -203,7 +267,7 @@ def query(request):
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -224,7 +288,7 @@ class TestInvokeSchema:
 def schema():
     return {"description": "test plugin", "params": {"q": {"type": "string"}}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -240,7 +304,7 @@ def query(request):
 def schema():
     raise RuntimeError("bad config")
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -256,7 +320,7 @@ def query(request):
 def schema():
     return "not a dict"
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -272,7 +336,7 @@ def query(request):
 def schema():
     return None
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):

@@ -34,7 +34,7 @@ CONFIG_FILE = "config.toml"
 PLUGIN_TEMPLATE = '''\
 """konkon plugin."""
 
-from konkon.types import RawDataAccessor, QueryRequest, QueryResult
+from konkon.types import BuildContext, RawDataAccessor, QueryRequest, QueryResult
 
 
 def schema():
@@ -48,8 +48,17 @@ def schema():
     }
 
 
-def build(raw_data: RawDataAccessor) -> None:
-    """Transform raw data into AI-ready context."""
+def build(raw_data: RawDataAccessor, context: BuildContext) -> None:
+    """Transform raw data into AI-ready context.
+
+    Args:
+        raw_data: Records to process.
+            mode="full": all records. mode="incremental": changed since last build.
+        context: Build metadata.
+            context.mode: "full" or "incremental".
+            context.deleted_records: records deleted since last build
+                (empty for full builds). Remove these from your Context Store.
+    """
     pass
 
 

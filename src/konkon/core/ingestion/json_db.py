@@ -21,7 +21,7 @@ from konkon.core.ingestion.backend import (
     parse_datetime,
     validate_utc,
 )
-from konkon.core.models import ConfigError, JSONValue, RawRecord
+from konkon.core.models import ConfigError, DeletedRecord, JSONValue, RawRecord
 
 _CURRENT_VERSION = 2
 _WARN_THRESHOLD = 10_000
@@ -92,6 +92,7 @@ class JsonDB:
     def __init__(self, db_path: str | Path) -> None:
         self._path = Path(db_path)
         self._records: list[RawRecord] = []
+        self._deletions: list[dict[str, str]] = []  # {"record_id", "deleted_at", "meta"}
         self._index: dict[str, int] = {}
         self._load()
 
@@ -133,6 +134,9 @@ class JsonDB:
             )
             self._records.append(record)
 
+        # Load deletions (backward compat: missing key = empty)
+        self._deletions = list(data.get("deletions", []))
+
         # Ensure deterministic order even for manually-edited files
         self._sort_records()
 
@@ -161,7 +165,11 @@ class JsonDB:
 
     def _save(self) -> None:
         """Atomically write all records to the JSON file."""
-        data = {"version": _CURRENT_VERSION, "records": self._serialize_records()}
+        data: dict[str, object] = {
+            "version": _CURRENT_VERSION,
+            "records": self._serialize_records(),
+            "deletions": self._deletions,
+        }
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(".json.tmp")
         tmp.write_text(
@@ -242,6 +250,63 @@ class JsonDB:
             reverse=True,
         )
         return sorted_desc[:limit]
+
+    def delete(self, record_id: str) -> None:
+        """Delete record and create tombstone in deletions list.
+
+        Raises KeyError if record_id not found.
+        """
+        idx = self._index.get(record_id)
+        if idx is None:
+            raise KeyError(f"record not found: {record_id}")
+
+        existing = self._records[idx]
+        now = datetime.now(timezone.utc)
+        deleted_at_str = format_datetime(now)
+        meta = dict(existing.meta) if existing.meta else {}
+
+        self._records.pop(idx)
+        self._rebuild_index()
+        self._deletions.append({
+            "record_id": record_id,
+            "deleted_at": deleted_at_str,
+            "meta": json.dumps(meta, ensure_ascii=False),
+        })
+        self._save()
+
+    def get_deleted_records_since(
+        self, timestamp: datetime
+    ) -> list[DeletedRecord]:
+        """Return DeletedRecords with deleted_at > timestamp."""
+        validate_utc(timestamp)
+        ts_str = format_datetime(timestamp)
+        result = []
+        for entry in self._deletions:
+            if entry["deleted_at"] > ts_str:
+                meta_str = entry.get("meta", "{}")
+                meta = json.loads(meta_str) if isinstance(meta_str, str) else meta_str
+                result.append(DeletedRecord(
+                    id=entry["record_id"],
+                    meta=meta,
+                ))
+        result.sort(key=lambda d: (
+            next((e["deleted_at"] for e in self._deletions if e["record_id"] == d.id), ""),
+            d.id,
+        ))
+        return result
+
+    def purge_tombstones(self, before: datetime) -> int:
+        """Remove tombstones with deleted_at <= before. Returns count purged."""
+        validate_utc(before)
+        ts_str = format_datetime(before)
+        original_len = len(self._deletions)
+        self._deletions = [
+            d for d in self._deletions if d["deleted_at"] > ts_str
+        ]
+        purged = original_len - len(self._deletions)
+        if purged > 0:
+            self._save()
+        return purged
 
     def accessor(self) -> JsonRawDataAccessor:
         """Return a RawDataAccessor over all records.

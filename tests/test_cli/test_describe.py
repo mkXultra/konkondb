@@ -39,7 +39,7 @@ def schema():
         },
     }
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -90,7 +90,7 @@ class TestDescribeCommand:
 def schema():
     raise RuntimeError("broken schema")
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -119,7 +119,7 @@ def query(request):
 def schema():
     return {"description": "Minimal", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -137,7 +137,7 @@ def query(request):
 def schema():
     return "not a dict"
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -165,7 +165,7 @@ def query(request):
 def schema():
     return {"description": "Custom plugin", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):

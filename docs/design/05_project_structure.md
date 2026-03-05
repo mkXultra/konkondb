@@ -46,27 +46,29 @@ konkondb/                       # プロジェクトルート (git root)
 │       ├── __init__.py
 │       ├── types.py            # 公開型の re-export (Plugin 開発者向け API)
 │       │                       #   RawDataAccessor, RawRecord,
+│       │                       #   BuildContext, DeletedRecord,
 │       │                       #   QueryRequest, QueryResult,
 │       │                       #   KonkonError, BuildError, QueryError
 │       ├── application/        # Application Layer (注2)
 │       │   ├── __init__.py     #   Use Case の公開 API
 │       │   └── use_cases.py    #   Thin Orchestrator (Context Facade の呼び出し調停)
-│       ├── cli/                # CLI Entry (click)
-│       │   ├── __init__.py     #   main group + エントリポイント
-│       │   ├── init.py
-│       │   ├── insert.py
-│       │   ├── update.py
-│       │   ├── build.py
-│       │   ├── search.py
-│       │   ├── raw.py          #   raw サブコマンドグループ (raw list 等)
-│       │   └── serve.py        #   serve api / serve mcp サブコマンド
-│       ├── core/               # コアロジック
-│       │   ├── __init__.py
-│       │   ├── models.py       #   RawRecord, QueryRequest, QueryResult 等の定義
-│       │   ├── instance.py     #   プロジェクトルート解決、パス定数
-│       │   ├── ingestion/      #   Ingestion Context (Raw DB)
-│       │   │   ├── __init__.py #     facade (ingest, update, list_records, get_accessor)
-│       │   │   └── raw_db.py   #     Raw DB アクセス (RawDataAccessor 実装)
+│   ├── cli/                # CLI Entry (click)
+│   │   ├── __init__.py     #   main group + エントリポイント
+│   │   ├── init.py
+│   │   ├── insert.py
+│   │   ├── update.py
+│   │   ├── delete.py       #   Raw Record の削除
+│   │   ├── build.py
+│   │   ├── search.py
+│   │   ├── raw.py          #   raw サブコマンドグループ (raw list 等)
+│   │   └── serve.py        #   serve api / serve mcp サブコマンド
+│   ├── core/               # コアロジック
+│   │   ├── __init__.py
+│   │   ├── models.py       #   RawRecord, BuildContext, DeletedRecord, QueryRequest 等の定義
+│   │   ├── instance.py     #   プロジェクトルート解決、パス定数
+│   │   ├── ingestion/      #   Ingestion Context (Raw DB)
+│   │   │   ├── __init__.py #     facade (ingest, update, delete, list_records, get_accessor, get_deleted_records_since, purge_tombstones)
+│   │   │   └── raw_db.py   #     Raw DB アクセス (RawDataAccessor 実装)
 │       │   └── transformation/ #   Transformation Context (Plugin Host)
 │       │       ├── __init__.py #     facade (run_build, run_query)
 │       │       └── plugin_host.py  # Plugin ロード・実行
@@ -97,7 +99,7 @@ konkondb/                       # プロジェクトルート (git root)
 
 `core/` は 01_conceptual_architecture.md で定義された Bounded Context に対応し、`ingestion/` と `transformation/` の2サブパッケージに分割されている:
 
-- **`core/ingestion/`**: Ingestion Context。Raw DB へのアクセスを担う。facade（`__init__.py`）が `ingest`, `update`, `list_records`, `get_accessor` を公開
+- **`core/ingestion/`**: Ingestion Context。Raw DB へのアクセスを担う。facade（`__init__.py`）が `ingest`, `update`, `delete`, `list_records`, `get_accessor`, `get_deleted_records_since`, `purge_tombstones` を公開
 - **`core/transformation/`**: Transformation Context。Plugin Host と build/query のオーケストレーションを担う。facade（`__init__.py`）が `run_build`, `run_query` を公開
 - **`core/instance.py`**: プロジェクトルートの解決（`resolve_project()`）やパス定数（`KONKON_DIR`, `RAW_DB_FILE` 等）を提供するシステムレベルのモジュール
 
@@ -119,7 +121,7 @@ ACL の担保:
 `types.py` は `core/models.py` で定義された型と例外を re-export する薄いモジュール。Plugin 開発者は以下のインポートパスを使用する（[commands/init.md](./commands/init.md) の `konkon init` テンプレートと一致）:
 
 ```python
-from konkon.types import RawDataAccessor, QueryRequest, QueryResult
+from konkon.types import RawDataAccessor, BuildContext, DeletedRecord, QueryRequest, QueryResult
 from konkon.types import BuildError, QueryError
 ```
 

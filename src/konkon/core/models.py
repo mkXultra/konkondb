@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Iterator, Mapping, Protocol, TypeAlias
+from typing import Iterator, Literal, Mapping, Protocol, Sequence, TypeAlias
 
 # ---------------------------------------------------------
 # JSON-safe type definitions
@@ -65,6 +65,28 @@ class RawDataAccessor(Protocol):
     def __iter__(self) -> Iterator[RawRecord]: ...
     def __len__(self) -> int: ...
     def since(self, timestamp: datetime) -> "RawDataAccessor": ...
+
+
+@dataclass(frozen=True)
+class DeletedRecord:
+    """Tombstone: deleted record info (id + meta at deletion time)."""
+
+    id: str
+    meta: Mapping[str, JSONValue]
+
+
+@dataclass(frozen=True)
+class BuildContext:
+    """Metadata passed to build() as second argument.
+
+    mode: "full" (all records, rebuild Context Store) or
+          "incremental" (delta only since last build).
+    deleted_records: records deleted since last build.
+        Empty for mode="full".
+    """
+
+    mode: Literal["full", "incremental"]
+    deleted_records: Sequence[DeletedRecord] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

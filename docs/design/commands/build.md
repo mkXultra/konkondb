@@ -41,7 +41,7 @@ konkon build [OPTIONS]
 
 1. **Load / Contract 検証**: [04_cli_conventions.md §2.6](../04_cli_conventions.md) に従う
 2. **CWD 設定**: [04_cli_conventions.md §2.6](../04_cli_conventions.md) の CWD 保証に従い、Plugin ファイルのディレクトリに設定する
-3. **Invoke**: `build(raw_data)` を呼び出す（sync/async 処理は [04_cli_conventions.md §2.6](../04_cli_conventions.md) に従う）
+3. **Invoke**: `build(raw_data, context)` を呼び出す（sync/async 処理は [04_cli_conventions.md §2.6](../04_cli_conventions.md) に従う）。`context` は [BuildContext](../06_build_context.md) であり、ビルドモードと削除情報を含む
 4. **エラーハンドリング**: `BuildError` は診断メッセージ付きで stderr に出力。未捕捉例外はトレースバック付きで stderr に出力
 
 ### 中断時の振る舞い
@@ -100,7 +100,8 @@ konkon build [OPTIONS]
 ## 設計判断・補足
 
 **Plugin Contract との関連:**
-- `build(raw_data: RawDataAccessor) -> None` の契約に厳密に従う（sync/async 両対応）→ [02_interface_contracts.md §1](../02_interface_contracts.md)
+- `build(raw_data: RawDataAccessor, context: BuildContext) -> None` の契約に厳密に従う（sync/async 両対応）→ [02_interface_contracts.md §1](../02_interface_contracts.md)、[06_build_context.md](../06_build_context.md)
+- `context` には `mode`（`"full"` / `"incremental"`）と `deleted_records`（前回ビルド以降に削除された Record の情報。各要素は `DeletedRecord(id, meta)`）が含まれる
 - 差分ビルドでは `.konkon/last_build` の時刻を基準に `updated_at` でフィルタする
 - Accessor の順序契約（`ORDER BY created_at ASC, id ASC`）を変更しない
 - Plugin に Raw DB 接続や `raw_records` テーブル名を露出しない（ACL #1）

@@ -9,7 +9,7 @@ import sys
 
 import click
 
-from konkon.cli import build, describe, init, insert, migrate, raw, search, serve, update
+from konkon.cli import build, delete, describe, init, insert, migrate, raw, search, serve, update
 
 
 @click.group(invoke_without_command=True, context_settings={"max_content_width": 120})
@@ -60,6 +60,7 @@ def help(ctx: click.Context, command: str | None) -> None:
 # Register subcommands from their modules
 init.register(main)
 insert.register(main)
+delete.register(main)
 build.register(main)
 search.register(main)
 describe.register(main)

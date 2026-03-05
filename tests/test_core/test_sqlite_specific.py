@@ -64,7 +64,28 @@ class TestSqliteInit:
         conn = sqlite3.connect(str(db_path))
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         conn.close()
-        assert version == 2
+        assert version == 3
+
+    def test_creates_raw_deletions_table(self, db_path: Path):
+        db = RawDB(db_path)
+        db.close()
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='raw_deletions'"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+
+    def test_creates_deletions_index(self, db_path: Path):
+        db = RawDB(db_path)
+        db.close()
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='index' AND name='idx_raw_deletions_deleted_at'"
+        ).fetchone()
+        conn.close()
+        assert row is not None
 
     def test_creates_index(self, db_path: Path):
         db = RawDB(db_path)
@@ -304,7 +325,169 @@ class TestMigrationV1ToV2:
         conn = sqlite3.connect(str(db_path))
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         conn.close()
-        assert version == 2
+        assert version == 3
+
+    def test_migration_creates_raw_deletions(self, db_path: Path):
+        """v1 → v3 migration also creates raw_deletions table."""
+        self._create_v1_db(db_path)
+        db = RawDB(db_path)
+        db.close()
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='raw_deletions'"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+
+
+# ---- Migration v2 → v3 ----
+
+
+class TestMigrationV2ToV3:
+    """Schema migration from version 2 to version 3 (add raw_deletions)."""
+
+    def _create_v2_db(self, db_path: Path) -> None:
+        """Create a v2 schema database directly."""
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS raw_records (
+                id          TEXT PRIMARY KEY COLLATE BINARY,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL,
+                content     TEXT NOT NULL,
+                meta        TEXT,
+                CHECK (id <> ''),
+                CHECK (meta IS NULL OR (json_valid(meta) AND json_type(meta) = 'object')),
+                CHECK (length(created_at) = 27),
+                CHECK (substr(created_at, 5, 1)  = '-'),
+                CHECK (substr(created_at, 8, 1)  = '-'),
+                CHECK (substr(created_at, 11, 1) = 'T'),
+                CHECK (substr(created_at, 14, 1) = ':'),
+                CHECK (substr(created_at, 17, 1) = ':'),
+                CHECK (substr(created_at, 20, 1) = '.'),
+                CHECK (substr(created_at, 27, 1) = 'Z'),
+                CHECK (length(updated_at) = 27),
+                CHECK (substr(updated_at, 5, 1)  = '-'),
+                CHECK (substr(updated_at, 8, 1)  = '-'),
+                CHECK (substr(updated_at, 11, 1) = 'T'),
+                CHECK (substr(updated_at, 14, 1) = ':'),
+                CHECK (substr(updated_at, 17, 1) = ':'),
+                CHECK (substr(updated_at, 20, 1) = '.'),
+                CHECK (substr(updated_at, 27, 1) = 'Z')
+            ) STRICT;
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_raw_records_created_at_id
+                ON raw_records (created_at ASC, id ASC);
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_raw_records_updated_at_id
+                ON raw_records (updated_at ASC, id ASC);
+        """)
+        conn.execute("PRAGMA user_version = 2")
+        conn.execute(
+            "INSERT INTO raw_records (id, created_at, updated_at, content, meta) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("test-id", "2026-01-01T00:00:00.000000Z",
+             "2026-01-01T00:00:00.000000Z", "hello", None),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_migration_preserves_data(self, db_path: Path):
+        self._create_v2_db(db_path)
+        db = RawDB(db_path)
+        records = list(db.accessor())
+        assert len(records) == 1
+        assert records[0].content == "hello"
+        db.close()
+
+    def test_migration_creates_raw_deletions(self, db_path: Path):
+        self._create_v2_db(db_path)
+        db = RawDB(db_path)
+        db.close()
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='raw_deletions'"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+
+    def test_migration_bumps_version_to_3(self, db_path: Path):
+        self._create_v2_db(db_path)
+        db = RawDB(db_path)
+        db.close()
+        conn = sqlite3.connect(str(db_path))
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        conn.close()
+        assert version == 3
+
+    def test_migration_creates_deletions_index(self, db_path: Path):
+        self._create_v2_db(db_path)
+        db = RawDB(db_path)
+        db.close()
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='index' AND name='idx_raw_deletions_deleted_at'"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+
+
+# ---- raw_deletions DDL constraints ----
+
+
+class TestRawDeletionsDDL:
+    """CHECK constraints on the raw_deletions table."""
+
+    def test_empty_record_id_rejected(self, db_path: Path):
+        db = RawDB(db_path)
+        db.close()
+        conn = sqlite3.connect(str(db_path))
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO raw_deletions (record_id, deleted_at, meta) "
+                "VALUES ('', '2026-01-01T00:00:00.000000Z', '{}')"
+            )
+        conn.close()
+
+    def test_invalid_meta_rejected(self, db_path: Path):
+        db = RawDB(db_path)
+        db.close()
+        conn = sqlite3.connect(str(db_path))
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO raw_deletions (record_id, deleted_at, meta) "
+                """VALUES ('id1', '2026-01-01T00:00:00.000000Z', '"string"')"""
+            )
+        conn.close()
+
+    def test_invalid_deleted_at_rejected(self, db_path: Path):
+        db = RawDB(db_path)
+        db.close()
+        conn = sqlite3.connect(str(db_path))
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO raw_deletions (record_id, deleted_at, meta) "
+                "VALUES ('id1', '2026-01-01T00:00:00Z', '{}')"
+            )
+        conn.close()
+
+    def test_default_meta_is_empty_object(self, db_path: Path):
+        db = RawDB(db_path)
+        db.close()
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "INSERT INTO raw_deletions (record_id, deleted_at) "
+            "VALUES ('id1', '2026-01-01T00:00:00.000000Z')"
+        )
+        row = conn.execute(
+            "SELECT meta FROM raw_deletions WHERE record_id = 'id1'"
+        ).fetchone()
+        conn.close()
+        assert row[0] == "{}"
 
 
 # ---- Unknown schema version ----

@@ -60,6 +60,17 @@ def update(
     return ingestion.update(record_id, content, meta, project_root)
 
 
+def delete(
+    record_id: str,
+    project_root: Path,
+) -> None:
+    """Delete a Raw Record and create a tombstone.
+
+    Delegates to core.ingestion.delete().
+    """
+    ingestion.delete(record_id, project_root)
+
+
 def build(
     project_root: Path,
     *,
