@@ -6,7 +6,7 @@
 - `prd.md` のコマンド体系（help, init, insert, update, build, search, raw, serve）
 - `01_conceptual_architecture.md` の境界設計（Bounded Contexts / ACL）
 - `02_interface_contracts.md` の Plugin Contract（`build()`, `query()`, 型定義）
-- `03_data_model.md` の Raw DB スキーマ（UUID v7, RFC3339 UTC, DELETE なし）
+- `03_data_model.md` の Raw DB スキーマ（UUID v7, RFC3339 UTC, 物理削除 + Tombstone）
 
 ---
 
@@ -166,8 +166,8 @@ Plugin ファイルのパスは以下の優先順位で解決する。`build`, `
 
 #### Load と Contract 検証
 
-1. `konkon.py` をインポートし、`build` と `query` の両関数が**存在し呼び出し可能**であることを検証する（[02_interface_contracts.md §1](./02_interface_contracts.md)）。型注釈の有無や引数名は検証しない
-2. いずれかの関数が欠落している場合、終了コード `3` (CONFIG_ERROR) でエラー
+1. `konkon.py` をインポートし、`build` と `query` の両関数が**存在し呼び出し可能**であることを検証する（[02_interface_contracts.md §1](./02_interface_contracts.md)）。いずれかが欠落している場合は終了コード `3` (CONFIG_ERROR)。型注釈の有無や引数名は検証しない
+2. `build` は**必須引数が正確に2個**（`raw_data`, `context`）であることを検証する。必須 keyword-only 引数が存在する場合も Contract 不適合とする。不適合の場合は終了コード `3`。詳細は [06_build_context.md §3.2](./06_build_context.md) を参照
 
 #### CWD 保証
 
@@ -223,7 +223,7 @@ KeyError: 'missing_key'
 [ERROR] Plugin contract violation: query() returned None. Must return str or QueryResult.
 
 # Raw DB スキーマ不一致 (exit 3)
-Error: Raw DB schema version mismatch (expected: 2, found: 1). Please update konkon.
+Error: Raw DB schema version mismatch (expected: 3, found: 1). Please update konkon.
 ```
 
 ---

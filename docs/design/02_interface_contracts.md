@@ -11,7 +11,7 @@
 ```python
 from __future__ import annotations
 
-from typing import Iterator, Mapping, Protocol, TypeAlias
+from typing import Iterator, Literal, Mapping, Protocol, Sequence, TypeAlias
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -105,6 +105,29 @@ class RawDataAccessor(Protocol):
         ...
 
 @dataclass(frozen=True)
+class DeletedRecord:
+    """Tombstone から復元された削除済みレコードの情報。"""
+    id: str
+    meta: Mapping[str, JSONValue]
+
+@dataclass(frozen=True)
+class BuildContext:
+    """
+    build() に渡されるビルドのメタデータ。
+
+    Attributes:
+        mode: ビルドの種類。
+            "full" — raw_data は全レコード。Context Store を全再構築すべき。
+            "incremental" — raw_data は前回ビルド以降の変更分のみ。
+        deleted_records: 前回ビルド以降に削除された Record の情報。
+            mode="full" の場合は空。
+            mode="incremental" の場合は該当レコードのリスト。
+            各要素は id と meta を持つ。Plugin はこれらを Context Store から除去すべき。
+    """
+    mode: Literal["full", "incremental"]
+    deleted_records: Sequence[DeletedRecord] = field(default_factory=tuple)
+
+@dataclass(frozen=True)
 class QueryRequest:
     """ACL #3: Application Layer（Serving Adapter 経由を含む）から渡される正規化された検索リクエスト"""
     query: str
@@ -129,8 +152,8 @@ class QueryResult:
 # さらに、関数実行結果に対して inspect.isawaitable(result) を確認し、
 # await 可能であれば await する（デコレータやラッパー関数への対応）。
 #
-# 同期版:   def build(raw_data: RawDataAccessor) -> None: ...
-# 非同期版: async def build(raw_data: RawDataAccessor) -> None: ...
+# 同期版:   def build(raw_data: RawDataAccessor, context: BuildContext) -> None: ...
+# 非同期版: async def build(raw_data: RawDataAccessor, context: BuildContext) -> None: ...
 # 同期版:   def query(request: QueryRequest) -> str | QueryResult: ...
 # 非同期版: async def query(request: QueryRequest) -> str | QueryResult: ...
 
@@ -170,13 +193,26 @@ def schema() -> dict[str, JSONValue]:
 # 3.2 ビルド関数 (Required)
 # ---------------------------------------------------------
 
-def build(raw_data: RawDataAccessor) -> None:
+def build(raw_data: RawDataAccessor, context: BuildContext) -> None:
     """
     [Transform (Write) フェーズ]
     Raw DB からストリームでデータを読み出し、開発者独自の Context DB を構築・更新する。
 
+    raw_data: ビルド対象のレコード
+      - mode="full": 全レコード
+      - mode="incremental": 前回ビルド以降に追加・更新されたレコードのみ
+
+    context: ビルドのメタデータ（BuildContext）
+      - context.mode: "full" or "incremental"
+      - context.deleted_records: 前回ビルド以降に削除された Record 情報
+        （各要素は id と meta を持つ DeletedRecord）
+
     フレームワーク保証: 実行時のカレントディレクトリはプロジェクトルート
     （konkon.py があるディレクトリ）に設定される。
+
+    冪等性要件: build() が途中で失敗した場合、次回ビルドで同じ
+    deleted_records が再送される。Plugin は deleted_records の処理を
+    冪等に実装すること（存在しない ID の削除を無視する等）。
     """
     pass
 
@@ -199,6 +235,8 @@ def query(request: QueryRequest) -> str | QueryResult:
 ```
 
 > **互換性注記:** `source_uri` / `content_type` は `RawRecord.meta` から投影される read-only property として維持される。
+
+> **公開 API:** `DeletedRecord` および `BuildContext` は `core/models.py` に定義され、`konkon/types.py` から re-export される。Plugin 開発者は `from konkon.types import BuildContext, DeletedRecord` でインポートする。詳細は [06_build_context.md §2.1](./06_build_context.md) を参照。
 
 ## 2. 設計の意図とベストプラクティス (DX と 安全性)
 
