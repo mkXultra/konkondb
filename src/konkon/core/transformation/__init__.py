@@ -27,12 +27,13 @@ References:
 """
 
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 from konkon.core import ingestion
 from konkon.core.instance import last_build_path
-from konkon.core.models import QueryRequest, QueryResult
+from konkon.core.models import BuildContext, QueryRequest, QueryResult
 from konkon.core.transformation.plugin_host import (
     invoke_build,
     invoke_query,
@@ -66,15 +67,17 @@ def run_build(
     full: bool = False,
     plugin_path: Path | None = None,
 ) -> None:
-    """Load the user plugin and invoke build(raw_data).
+    """Load the user plugin and invoke build(raw_data, context).
 
-    Orchestrates the data flow:
+    Orchestrates the data flow (06_build_context.md §5):
     1. Load and validate plugin (Plugin Contract, ACL #2)
-    2. Get RawDataAccessor from Ingestion Context (ACL #1)
-    3. Apply incremental filter unless full=True
-    4. Set CWD to plugin directory (04_cli_conventions.md §2.6)
-    5. Invoke plugin.build(accessor)
-    6. Record last_build timestamp on success
+    2. Record build_start BEFORE querying data
+    3. Determine build mode (full vs incremental)
+    4. Build BuildContext with mode and deleted_records
+    5. Get RawDataAccessor from Ingestion Context (ACL #1)
+    6. Set CWD to plugin directory (04_cli_conventions.md §2.6)
+    7. Invoke plugin.build(accessor, context)
+    8. On success: write checkpoint, purge tombstones (best-effort)
     """
     if plugin_path is None:
         plugin_path = project_root / "konkon.py"
@@ -86,22 +89,45 @@ def run_build(
     # up by the next incremental build (fixes checkpoint-skip bug).
     build_start = datetime.now(timezone.utc)
 
-    # Incremental build: filter by updated_at > last_build
+    # Determine mode and build BuildContext (06_build_context.md §5)
     last_build = _read_last_build(project_root) if not full else None
-    accessor = ingestion.get_accessor(
-        project_root, modified_since=last_build
-    )
+
+    if last_build is None:
+        # Full build: all records, no deleted_records
+        mode = "full"
+        accessor = ingestion.get_accessor(project_root)
+        deleted_records = ()
+    else:
+        # Incremental build: filter by updated_at > last_build
+        mode = "incremental"
+        accessor = ingestion.get_accessor(
+            project_root, modified_since=last_build
+        )
+        deleted_records = tuple(
+            ingestion.get_deleted_records_since(project_root, last_build)
+        )
+
+    context = BuildContext(mode=mode, deleted_records=deleted_records)
 
     # CWD guarantee: plugin runs in its own directory (§2.6)
     saved_cwd = os.getcwd()
     try:
         os.chdir(plugin_path.parent)
-        invoke_build(plugin, accessor)
+        invoke_build(plugin, accessor, context)
     finally:
         os.chdir(saved_cwd)
 
     # Record build start time (not completion time) as checkpoint
     _write_last_build(project_root, build_start)
+
+    # Purge tombstones (best-effort, 06_build_context.md §4.3)
+    try:
+        ingestion.purge_tombstones(project_root, build_start)
+    except Exception:
+        print(
+            "[WARN] Failed to purge tombstones. They will be retried on next build.",
+            file=sys.stderr,
+        )
 
 
 def run_describe(

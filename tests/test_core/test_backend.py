@@ -390,3 +390,130 @@ class TestBackendListRecords:
         raw_db.insert(content="only")
         records = raw_db.list_records(100)
         assert len(records) == 1
+
+
+# ---- Delete ----
+
+
+class TestBackendDelete:
+    """Backend.delete() — physical delete + tombstone creation."""
+
+    def test_delete_removes_record(self, raw_db):
+        record = raw_db.insert(content="hello")
+        raw_db.delete(record.id)
+        assert raw_db.get_record(record.id) is None
+
+    def test_delete_nonexistent_raises(self, raw_db):
+        with pytest.raises(KeyError, match="record not found"):
+            raw_db.delete("nonexistent-id")
+
+    def test_delete_creates_tombstone(self, raw_db):
+        record = raw_db.insert(content="hello", meta={"key": "val"})
+        checkpoint = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        raw_db.delete(record.id)
+        deleted = raw_db.get_deleted_records_since(checkpoint)
+        assert len(deleted) == 1
+        assert deleted[0].id == record.id
+        assert deleted[0].meta == {"key": "val"}
+
+    def test_delete_null_meta_coalesced(self, raw_db):
+        """COALESCE(meta, '{}') ensures NULL meta becomes empty dict."""
+        record = raw_db.insert(content="no meta")
+        checkpoint = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        raw_db.delete(record.id)
+        deleted = raw_db.get_deleted_records_since(checkpoint)
+        assert len(deleted) == 1
+        assert deleted[0].meta == {}
+
+    def test_delete_reduces_accessor_count(self, raw_db):
+        r1 = raw_db.insert(content="first")
+        raw_db.insert(content="second")
+        raw_db.delete(r1.id)
+        assert len(raw_db.accessor()) == 1
+
+
+# ---- get_deleted_records_since ----
+
+
+class TestBackendGetDeletedRecordsSince:
+    """Backend.get_deleted_records_since() — tombstone retrieval."""
+
+    def test_empty_when_no_deletions(self, raw_db):
+        raw_db.insert(content="hello")
+        checkpoint = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        assert raw_db.get_deleted_records_since(checkpoint) == []
+
+    def test_filters_by_timestamp(self, raw_db):
+        r1 = raw_db.insert(content="first")
+        time.sleep(0.01)
+        checkpoint = datetime.now(timezone.utc)
+        time.sleep(0.01)
+        r2 = raw_db.insert(content="second")
+
+        raw_db.delete(r1.id)
+        time.sleep(0.01)
+        raw_db.delete(r2.id)
+
+        # Both deleted after checkpoint
+        deleted = raw_db.get_deleted_records_since(checkpoint)
+        ids = [d.id for d in deleted]
+        assert r1.id in ids
+        assert r2.id in ids
+
+    def test_excludes_before_timestamp(self, raw_db):
+        r1 = raw_db.insert(content="first")
+        raw_db.delete(r1.id)
+        time.sleep(0.01)
+
+        checkpoint = datetime.now(timezone.utc)
+        time.sleep(0.01)
+
+        r2 = raw_db.insert(content="second")
+        raw_db.delete(r2.id)
+
+        deleted = raw_db.get_deleted_records_since(checkpoint)
+        assert len(deleted) == 1
+        assert deleted[0].id == r2.id
+
+
+# ---- purge_tombstones ----
+
+
+class TestBackendPurgeTombstones:
+    """Backend.purge_tombstones() — tombstone cleanup."""
+
+    def test_purge_removes_old_tombstones(self, raw_db):
+        r1 = raw_db.insert(content="first")
+        raw_db.delete(r1.id)
+        time.sleep(0.01)
+
+        cutoff = datetime.now(timezone.utc)
+        time.sleep(0.01)
+
+        r2 = raw_db.insert(content="second")
+        raw_db.delete(r2.id)
+
+        purged = raw_db.purge_tombstones(cutoff)
+        assert purged == 1
+
+        # Only r2's tombstone should remain
+        early = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        remaining = raw_db.get_deleted_records_since(early)
+        assert len(remaining) == 1
+        assert remaining[0].id == r2.id
+
+    def test_purge_returns_zero_when_empty(self, raw_db):
+        cutoff = datetime.now(timezone.utc)
+        assert raw_db.purge_tombstones(cutoff) == 0
+
+    def test_purge_all(self, raw_db):
+        r1 = raw_db.insert(content="first")
+        raw_db.delete(r1.id)
+        time.sleep(0.01)
+
+        future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        purged = raw_db.purge_tombstones(future)
+        assert purged == 1
+
+        early = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        assert raw_db.get_deleted_records_since(early) == []

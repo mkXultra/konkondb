@@ -6,8 +6,10 @@ Usage:
 """
 
 from konkon.core.models import (
+    BuildContext,
     BuildError,
     ConfigError,
+    DeletedRecord,
     JSONValue,
     KonkonError,
     QueryError,
@@ -18,8 +20,10 @@ from konkon.core.models import (
 )
 
 __all__ = [
+    "BuildContext",
     "BuildError",
     "ConfigError",
+    "DeletedRecord",
     "JSONValue",
     "KonkonError",
     "QueryError",

@@ -18,7 +18,7 @@ import struct
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
-from konkon.core.models import JSONValue, RawDataAccessor, RawRecord
+from konkon.core.models import DeletedRecord, JSONValue, RawDataAccessor, RawRecord
 
 
 class RawDBBackend(Protocol):
@@ -48,6 +48,14 @@ class RawDBBackend(Protocol):
     def get_record(self, record_id: str) -> RawRecord | None: ...
 
     def list_records(self, limit: int) -> list[RawRecord]: ...
+
+    def delete(self, record_id: str) -> None: ...
+
+    def get_deleted_records_since(
+        self, timestamp: datetime
+    ) -> list[DeletedRecord]: ...
+
+    def purge_tombstones(self, before: datetime) -> int: ...
 
     def accessor(self) -> RawDataAccessor: ...
 

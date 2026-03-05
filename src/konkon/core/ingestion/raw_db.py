@@ -18,9 +18,9 @@ from konkon.core.ingestion.backend import (
     parse_datetime,
     validate_utc,
 )
-from konkon.core.models import ConfigError, JSONValue, RawRecord
+from konkon.core.models import ConfigError, DeletedRecord, JSONValue, RawRecord
 
-# -- DDL (03_data_model.md §12, Version 2) --
+# -- DDL (03_data_model.md §12, Version 3) --
 
 _CREATE_TABLE = """\
 CREATE TABLE IF NOT EXISTS raw_records (
@@ -53,6 +53,27 @@ CREATE TABLE IF NOT EXISTS raw_records (
 ) STRICT;
 """
 
+_CREATE_TABLE_DELETIONS = """\
+CREATE TABLE IF NOT EXISTS raw_deletions (
+    record_id   TEXT NOT NULL,
+    deleted_at  TEXT NOT NULL,
+    meta        TEXT NOT NULL DEFAULT '{}',
+
+    CHECK (record_id <> ''),
+    CHECK (json_valid(meta)),
+    CHECK (json_type(meta) = 'object'),
+
+    CHECK (length(deleted_at) = 27),
+    CHECK (substr(deleted_at, 5, 1)  = '-'),
+    CHECK (substr(deleted_at, 8, 1)  = '-'),
+    CHECK (substr(deleted_at, 11, 1) = 'T'),
+    CHECK (substr(deleted_at, 14, 1) = ':'),
+    CHECK (substr(deleted_at, 17, 1) = ':'),
+    CHECK (substr(deleted_at, 20, 1) = '.'),
+    CHECK (substr(deleted_at, 27, 1) = 'Z')
+) STRICT;
+"""
+
 _CREATE_INDEX_CREATED = """\
 CREATE INDEX IF NOT EXISTS idx_raw_records_created_at_id
     ON raw_records (created_at ASC, id ASC);
@@ -63,7 +84,12 @@ CREATE INDEX IF NOT EXISTS idx_raw_records_updated_at_id
     ON raw_records (updated_at ASC, id ASC);
 """
 
-_CURRENT_VERSION = 2
+_CREATE_INDEX_DELETIONS = """\
+CREATE INDEX IF NOT EXISTS idx_raw_deletions_deleted_at
+    ON raw_deletions (deleted_at ASC, record_id ASC);
+"""
+
+_CURRENT_VERSION = 3
 
 _SELECT_COLS = "id, created_at, updated_at, content, meta"
 
@@ -189,21 +215,26 @@ class RawDB:
         self._conn.execute("PRAGMA synchronous = NORMAL")
 
         version = self._conn.execute("PRAGMA user_version").fetchone()[0]
-        if version < 1:
-            # Fresh database — create version 2 schema directly
-            self._conn.execute(_CREATE_TABLE)
-            self._conn.execute(_CREATE_INDEX_CREATED)
-            self._conn.execute(_CREATE_INDEX_UPDATED)
-            self._conn.execute(f"PRAGMA user_version = {_CURRENT_VERSION}")
-            self._conn.commit()
-        elif version == 1:
-            self._migrate_v1_to_v2()
-        elif version > _CURRENT_VERSION:
+        if version > _CURRENT_VERSION:
             raise ConfigError(
                 f"Raw DB schema version mismatch "
                 f"(expected: {_CURRENT_VERSION}, found: {version}). "
                 f"Please update konkon."
             )
+        if version < 1:
+            # Fresh database — create version 3 schema directly
+            self._conn.execute(_CREATE_TABLE)
+            self._conn.execute(_CREATE_INDEX_CREATED)
+            self._conn.execute(_CREATE_INDEX_UPDATED)
+            self._conn.execute(_CREATE_TABLE_DELETIONS)
+            self._conn.execute(_CREATE_INDEX_DELETIONS)
+            self._conn.execute(f"PRAGMA user_version = {_CURRENT_VERSION}")
+            self._conn.commit()
+        else:
+            if version == 1:
+                self._migrate_v1_to_v2()
+            if version <= 2:
+                self._migrate_v2_to_v3()
 
     def _migrate_v1_to_v2(self) -> None:
         """Migrate from schema version 1 (no updated_at) to version 2."""
@@ -221,6 +252,14 @@ class RawDB:
             {_CREATE_INDEX_CREATED}
             {_CREATE_INDEX_UPDATED}
 
+            PRAGMA user_version = 2;
+        """)
+
+    def _migrate_v2_to_v3(self) -> None:
+        """Migrate from schema version 2 to version 3 (add raw_deletions)."""
+        self._conn.executescript(f"""
+            {_CREATE_TABLE_DELETIONS}
+            {_CREATE_INDEX_DELETIONS}
             PRAGMA user_version = {_CURRENT_VERSION};
         """)
 
@@ -317,6 +356,71 @@ class RawDB:
             (limit,),
         ).fetchall()
         return [_row_to_record(row) for row in rows]
+
+    def delete(self, record_id: str) -> None:
+        """Delete record and create tombstone in raw_deletions.
+
+        Uses BEGIN IMMEDIATE for an explicit transaction (06_build_context.md §4.4).
+        Raises KeyError if record_id not found.
+        """
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = self._conn.execute(
+                "SELECT COALESCE(meta, '{}') FROM raw_records WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+            if row is None:
+                self._conn.execute("ROLLBACK")
+                raise KeyError(f"record not found: {record_id}")
+
+            meta_str = row[0]
+            now = datetime.now(timezone.utc)
+            deleted_at_str = _format_datetime(now)
+
+            self._conn.execute(
+                "DELETE FROM raw_records WHERE id = ?", (record_id,)
+            )
+            self._conn.execute(
+                "INSERT INTO raw_deletions (record_id, deleted_at, meta) "
+                "VALUES (?, ?, ?)",
+                (record_id, deleted_at_str, meta_str),
+            )
+            self._conn.execute("COMMIT")
+        except KeyError:
+            raise
+        except Exception:
+            self._conn.execute("ROLLBACK")
+            raise
+
+    def get_deleted_records_since(
+        self, timestamp: datetime
+    ) -> list[DeletedRecord]:
+        """Return DeletedRecords with deleted_at > timestamp.
+
+        Order: deleted_at ASC, record_id ASC.
+        """
+        validate_utc(timestamp)
+        ts_str = _format_datetime(timestamp)
+        rows = self._conn.execute(
+            "SELECT record_id, meta FROM raw_deletions "
+            "WHERE deleted_at > ? ORDER BY deleted_at ASC, record_id ASC",
+            (ts_str,),
+        ).fetchall()
+        result = []
+        for record_id, meta_str in rows:
+            meta = json.loads(meta_str) if meta_str else {}
+            result.append(DeletedRecord(id=record_id, meta=meta))
+        return result
+
+    def purge_tombstones(self, before: datetime) -> int:
+        """Remove tombstones with deleted_at <= before. Returns count purged."""
+        validate_utc(before)
+        ts_str = _format_datetime(before)
+        cursor = self._conn.execute(
+            "DELETE FROM raw_deletions WHERE deleted_at <= ?", (ts_str,)
+        )
+        self._conn.commit()
+        return cursor.rowcount
 
     def accessor(self) -> SqliteRawDataAccessor:
         """Return a RawDataAccessor over all records."""

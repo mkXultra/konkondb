@@ -31,7 +31,7 @@ NOOP_PLUGIN = """\
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -115,7 +115,7 @@ from pathlib import Path
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     Path("build_marker.txt").write_text("custom-plugin-used")
 
 def query(request):
@@ -140,7 +140,7 @@ from pathlib import Path
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     Path("config_marker.txt").write_text("config-plugin-used")
 
 def query(request):
@@ -156,7 +156,7 @@ from pathlib import Path
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     Path("override_marker.txt").write_text("override-used")
 
 def query(request):
@@ -177,7 +177,7 @@ from konkon.core.models import BuildError
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     raise BuildError("build failed")
 
 def query(request):
@@ -195,7 +195,7 @@ class TestSearch:
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -211,7 +211,7 @@ from konkon.core.models import QueryResult
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -230,7 +230,7 @@ def query(request):
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -251,7 +251,7 @@ def query(request):
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -265,7 +265,7 @@ def query(request):
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -282,7 +282,7 @@ import json
 def schema():
     return {"description": "test", "params": {"limit": {"type": "integer"}}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):

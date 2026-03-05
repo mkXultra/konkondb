@@ -28,7 +28,7 @@ class TestSearchCommand:
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -64,7 +64,7 @@ def schema():
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -84,7 +84,7 @@ import json
 def schema():
     return {"description": "test", "params": {"limit": {"type": "integer"}}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -106,7 +106,7 @@ import json
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -142,7 +142,7 @@ def schema():
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):
@@ -162,7 +162,7 @@ from konkon.core.models import ConfigError
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data):
+def build(raw_data, context):
     pass
 
 def query(request):

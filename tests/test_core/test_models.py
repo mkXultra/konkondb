@@ -112,6 +112,57 @@ class TestQueryResult:
         assert result.metadata["score"] == 0.95
 
 
+class TestDeletedRecord:
+    """DeletedRecord: frozen dataclass with id + meta."""
+
+    def test_basic_creation(self):
+        from konkon.types import DeletedRecord
+
+        rec = DeletedRecord(id="d1", meta={"source_uri": "file:///a.txt"})
+        assert rec.id == "d1"
+        assert rec.meta == {"source_uri": "file:///a.txt"}
+
+    def test_frozen(self):
+        from konkon.types import DeletedRecord
+
+        rec = DeletedRecord(id="d1", meta={})
+        with pytest.raises(AttributeError):
+            rec.id = "d2"  # type: ignore[misc]
+
+    def test_empty_meta(self):
+        from konkon.types import DeletedRecord
+
+        rec = DeletedRecord(id="d1", meta={})
+        assert rec.meta == {}
+
+
+class TestBuildContext:
+    """BuildContext: frozen dataclass with mode + deleted_records."""
+
+    def test_full_mode(self):
+        from konkon.types import BuildContext
+
+        ctx = BuildContext(mode="full")
+        assert ctx.mode == "full"
+        assert ctx.deleted_records == ()
+
+    def test_incremental_mode_with_deleted(self):
+        from konkon.types import BuildContext, DeletedRecord
+
+        deleted = [DeletedRecord(id="d1", meta={"key": "val"})]
+        ctx = BuildContext(mode="incremental", deleted_records=deleted)
+        assert ctx.mode == "incremental"
+        assert len(ctx.deleted_records) == 1
+        assert ctx.deleted_records[0].id == "d1"
+
+    def test_frozen(self):
+        from konkon.types import BuildContext
+
+        ctx = BuildContext(mode="full")
+        with pytest.raises(AttributeError):
+            ctx.mode = "incremental"  # type: ignore[misc]
+
+
 class TestExceptions:
     """Exception hierarchy: KonkonError > BuildError, QueryError."""
 

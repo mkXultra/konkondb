@@ -44,7 +44,7 @@ from konkon.types import RawDataAccessor, QueryRequest, QueryResult
 def schema():
     return {"description": "test", "params": {}}
 
-def build(raw_data: RawDataAccessor) -> None:
+def build(raw_data, context) -> None:
     records = list(raw_data)
     # Write count to a file as a simple "context build"
     from pathlib import Path
