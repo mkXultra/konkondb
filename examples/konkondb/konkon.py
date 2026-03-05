@@ -12,7 +12,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from konkon.types import RawDataAccessor, QueryRequest, QueryResult
+from konkon.types import BuildContext, RawDataAccessor, QueryRequest, QueryResult
 
 import llm
 from targets import BUILDS, QUERIES
@@ -245,9 +245,46 @@ def schema():
     }
 
 
-def build(raw_data: RawDataAccessor) -> None:
+def _purge_deleted(store: dict, deleted_paths: set[str]) -> int:
+    """削除されたファイルのデータを store から除去する.
+
+    condensed store (dict): 該当 file_path のキーを削除
+    file_map store (list[dict]): 該当 file_path の entry を除去
+
+    Returns: 除去されたエントリ数
+    """
+    count = 0
+    for decl in BUILDS:
+        data = _store_get(store, decl["store_path"])
+        if isinstance(data, dict):
+            for fp in deleted_paths:
+                if fp in data:
+                    del data[fp]
+                    count += 1
+        elif isinstance(data, list):
+            before = len(data)
+            data[:] = [e for e in data if e.get("file_path") not in deleted_paths]
+            count += before - len(data)
+    return count
+
+
+def build(raw_data: RawDataAccessor, context: BuildContext) -> None:
     """BUILDS 宣言に従いストアにデータを書き込む."""
     store = _load_store()
+
+    # インクリメンタルビルド時: 削除レコードを store から除去
+    if context.mode == "incremental" and context.deleted_records:
+        deleted_paths = {
+            rec.meta.get("file_path")
+            for rec in context.deleted_records
+            if isinstance(rec.meta.get("file_path"), str) and rec.meta.get("file_path")
+        }
+        if deleted_paths:
+            removed = _purge_deleted(store, deleted_paths)
+            for fp in sorted(deleted_paths):
+                print(f"  DELETE {fp}", file=sys.stderr)
+            print(f"  Purged {removed} entries", file=sys.stderr)
+
     records = list(raw_data)
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
