@@ -72,7 +72,7 @@ def schema():
     }
 
 
-def build(raw_data: RawDataAccessor) -> None:
+def build(raw_data: RawDataAccessor, context) -> None:
     """Transform raw data into AI-ready context."""
     pass
 
@@ -85,8 +85,10 @@ def query(request: QueryRequest) -> str | QueryResult:
 All three functions are required:
 
 - **`schema()`** declares the plugin's query interface — description, accepted parameters, and result metadata. Used by `konkon describe`, MCP tool definitions, and REST API docs.
-- **`build()`** receives a read-only accessor over raw records. Use it to populate your own context store — a vector DB, a SQLite index, a set of Markdown files, or anything else.
+- **`build()`** receives a read-only accessor over raw records and a build context. Use it to populate your own context store — a vector DB, a SQLite index, a set of Markdown files, or anything else.
 - **`query()`** receives a search request (`request.query` + `request.params`) and returns results from your context store.
+
+If your plugin uses external libraries, see the [Plugin Environment Setup](docs/guide/plugin-setup.md) guide.
 
 ## CLI Commands
 
