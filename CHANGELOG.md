@@ -2,6 +2,28 @@
 
 <!-- version list -->
 
+## v0.3.0 (2026-03-05)
+
+### Documentation
+
+- BuildContext・Tombstone・deleteコマンドの設計ドキュメントを追加・更新
+  ([`360d1f0`](https://github.com/mkXultra/konkondb/commit/360d1f0d00c0d831b25dd52ba7bb26178904673a))
+
+- README build() 更新とマルチエージェント実行パターンドキュメント追加
+  ([`50e4007`](https://github.com/mkXultra/konkondb/commit/50e40071fa9d1e4a57aa680ef4e66d4c53dee9eb))
+
+- プラグイン環境セットアップガイドを追加
+  ([`8c838e1`](https://github.com/mkXultra/konkondb/commit/8c838e15012919fdc56e2c811e4377251d77ef49))
+
+### Features
+
+- Deleteコマンド・BuildContext・Tombstone削除追跡を実装
+  ([`5450ed7`](https://github.com/mkXultra/konkondb/commit/5450ed73ad1d99a54d694ed6ec1042974e5fa905))
+
+- Ingest-staged スクリプト追加・削除検知と dry-run 対応
+  ([`6c5d749`](https://github.com/mkXultra/konkondb/commit/6c5d74991cc88cfc7b7d2a8de26ef9c8e9ef6aea))
+
+
 ## v0.2.0 (2026-03-02)
 
 ### Bug Fixes
