@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.3.1 (2026-03-08)
+
+### Bug Fixes
+
+- Init --plugin をテンプレート非生成・config 書き込みのみに変更
+  ([`2674a12`](https://github.com/mkXultra/konkondb/commit/2674a12affecbff6288c8fbd6414d7df8fc5196c))
+
+### Chores
+
+- GitHub PR テンプレートを追加
+  ([`4f67b91`](https://github.com/mkXultra/konkondb/commit/4f67b916b779cf0b08b2f73930c92d87bf8a69ab))
+
+
 ## v0.3.0 (2026-03-05)
 
 ### Documentation
