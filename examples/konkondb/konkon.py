@@ -1,12 +1,17 @@
-"""konkon plugin — konkon db 実装用コンテキスト.
+"""konkon plugin — konkon db 実装用コンテキスト (カナリア注入版).
 
 build() は BUILDS 宣言に従いストアにデータを書き込む。
 query() は QUERIES 宣言に従いストアからレスポンスを組み立てる。
 両者は store_path だけで接続される。
 
 Context Store: context.json (plugin dir)
+
+カナリア注入:
+  query() 実行時に各セクション境界にユニークなカナリア文字列を挿入し、
+  正解データを CANARIES_FILE に書き出す。
 """
 
+import hashlib
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -26,6 +31,7 @@ MAX_WORKERS = 4
 PLUGIN_DIR = Path(__file__).parent
 CONTEXT_FILE = PLUGIN_DIR / "context.json"
 CACHE_FILE = PLUGIN_DIR / "llm_cache.json"
+CANARIES_FILE = Path("/Users/mk/dev/personal-pj/konkondb/canaries.md")
 
 # ---------------------------------------------------------------------------
 # Store helpers
@@ -299,8 +305,34 @@ def build(raw_data: RawDataAccessor, context: BuildContext) -> None:
     print("\nBuild complete.", file=sys.stderr)
 
 
+def _make_canary(index: int, content: str) -> str:
+    """セクション内容のハッシュからユニークなカナリア文字列を生成.
+
+    同じ content に対して常に同じ値を返す（再現性あり）が、推測は困難。
+    """
+    hex_part = hashlib.sha256(content.encode()).hexdigest()[:8]
+    return f"@@CANARY_{index:03d}_{hex_part}@@"
+
+
+def _dump_canaries(canaries: list[dict]) -> None:
+    """正解データを CANARIES_FILE に書き出す."""
+    lines = [
+        "# Canary Answer Key",
+        "",
+        f"Total: {len(canaries)}",
+        "",
+        "| # | Canary | Position |",
+        "|---|--------|----------|",
+    ]
+    for c in canaries:
+        lines.append(f"| {c['index']} | `{c['value']}` | {c['position']} |")
+    lines.append("")
+    CANARIES_FILE.write_text("\n".join(lines))
+    print(f"  Canaries dumped to {CANARIES_FILE} ({len(canaries)} canaries)", file=sys.stderr)
+
+
 def query(request: QueryRequest) -> QueryResult:
-    """QUERIES 宣言に従いストアからレスポンスを組み立てる."""
+    """QUERIES 宣言に従いストアからレスポンスを組み立てる (カナリア注入版)."""
     view_name = request.params.get("view", "implementation")
     view = QUERIES.get(view_name)
     if not view:
@@ -329,8 +361,37 @@ def query(request: QueryRequest) -> QueryResult:
             content=f"'{view_name}' コンテキスト未構築。`konkon build --full` を実行してください。"
         )
 
+    # --- カナリア注入 ---
+    canary_index = 1
+    canaries: list[dict] = []
+    injected_parts = []
+
+    for i, part in enumerate(parts):
+        # セクション前にカナリア (セクション内容のハッシュ)
+        canary = _make_canary(canary_index, part)
+        canaries.append({
+            "index": canary_index,
+            "value": canary,
+            "position": f"before section {i + 1}",
+        })
+        injected_parts.append(canary)
+        canary_index += 1
+        injected_parts.append(part)
+
+    # 最後のセクション後にカナリア (全体のハッシュ)
+    canary = _make_canary(canary_index, "\n".join(parts))
+    canaries.append({
+        "index": canary_index,
+        "value": canary,
+        "position": f"after section {len(parts)} (end)",
+    })
+    injected_parts.append(canary)
+
+    # 正解データ書き出し
+    _dump_canaries(canaries)
+
     header = f"# {view['title']}\n\n"
-    body = "\n\n---\n\n".join(parts)
+    body = "\n\n---\n\n".join(injected_parts)
 
     return QueryResult(
         content=header + body,
