@@ -18,11 +18,11 @@ def register(group: click.Group) -> None:
 
 @click.command(short_help="Create a konkon project")
 @click.argument("directory", default=".", type=click.Path())
-@click.option("--force", is_flag=True, help="Overwrite existing plugin file")
+@click.option("--force", is_flag=True, help="Overwrite existing konkon.py template")
 @click.option(
     "--plugin",
     default=None,
-    help="Plugin template path (relative to DIRECTORY).",
+    help="Register plugin path in config (relative to DIRECTORY). No template is generated.",
 )
 @click.option(
     "--raw-backend",
@@ -32,7 +32,8 @@ def register(group: click.Group) -> None:
 def init(directory: str, force: bool, plugin: str | None, raw_backend: str | None) -> None:
     """Create a konkon project in the specified directory.
 
-    Generates plugin template and .konkon/ directory.
+    Creates .konkon/ directory and a konkon.py plugin template.
+    With --plugin, only writes the plugin path to config — no template is generated.
     Raw DB is NOT created here — it is lazily initialized on first insert.
     """
     if raw_backend is not None and raw_backend not in _VALID_BACKENDS:

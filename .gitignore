@@ -26,3 +26,5 @@ docs/design/claude/*
 
 # example output
 examples/json-export/context.json
+
+.bk*

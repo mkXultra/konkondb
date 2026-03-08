@@ -186,14 +186,17 @@ def init_project(
 ) -> None:
     """Create a konkon project in *directory*.
 
-    Creates .konkon/ (idempotent) and plugin template.
-    Raises FileExistsError if plugin file already exists and force is False.
+    Creates .konkon/ (idempotent) and, unless *plugin* is given,
+    generates a plugin template at ``directory/konkon.py``.
+    Raises FileExistsError if the template file already exists and
+    *force* is False.
     Does NOT create Raw DB (lazy init on first insert).
 
-    If plugin is specified, generates template at directory/plugin
-    and writes plugin path to .konkon/config.toml.
+    If *plugin* is specified, writes ``plugin = '<path>'`` to
+    ``.konkon/config.toml`` **only** — no template file is generated.
+    The *force* flag is ignored in this case.
 
-    If raw_backend is specified ('sqlite' or 'json'), writes it to
+    If *raw_backend* is specified ('sqlite' or 'json'), writes it to
     .konkon/config.toml.
     """
     if plugin is not None:
@@ -201,31 +204,18 @@ def init_project(
 
     directory.mkdir(parents=True, exist_ok=True)
 
-    if plugin is not None:
-        plugin_path = directory / plugin
-    else:
+    if plugin is None:
+        # Default: generate template at konkon.py
         plugin_path = directory / PLUGIN_FILE
-
-    if plugin_path.exists() and not force:
-        raise FileExistsError(f"{plugin_path} already exists. Use --force to overwrite.")
-
-    # H2: Prevent symlink-based path traversal — check BEFORE creating directories
-    # so that a rejected path doesn't leave side-effects (e.g. dirs created outside project).
-    resolved_dir = directory.resolve()
-    if plugin is not None:
-        # Resolve the plugin path relative to the resolved directory to detect symlinks.
-        # For existing symlinked parents, resolve() follows them; for non-existent paths,
-        # resolve the existing prefix and append the remaining parts.
-        resolved_plugin = (resolved_dir / plugin).resolve()
-        if not str(resolved_plugin).startswith(str(resolved_dir) + os.sep):
-            raise ValueError(
-                f"--plugin path resolves outside the project directory "
-                f"(resolved to '{resolved_plugin}')."
+        if plugin_path.exists() and not force:
+            raise FileExistsError(
+                f"{plugin_path} already exists. Use --force to overwrite."
             )
 
     (directory / KONKON_DIR).mkdir(exist_ok=True)
-    plugin_path.parent.mkdir(parents=True, exist_ok=True)
-    plugin_path.write_text(PLUGIN_TEMPLATE)
+
+    if plugin is None:
+        plugin_path.write_text(PLUGIN_TEMPLATE)
 
     needs_config = plugin is not None or raw_backend is not None
     if needs_config:

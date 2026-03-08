@@ -83,13 +83,13 @@ class TestInitProject:
 class TestInitProjectPlugin:
     """init_project with plugin= argument."""
 
-    def test_plugin_creates_template_at_custom_path(self, tmp_path: Path):
-        """--plugin src/my_plugin.py → template at that path, no konkon.py."""
+    def test_plugin_writes_config_only(self, tmp_path: Path):
+        """--plugin src/my_plugin.py → config.toml only, no template generated."""
         init_project(tmp_path, plugin="src/my_plugin.py")
-        assert (tmp_path / "src" / "my_plugin.py").is_file()
-        content = (tmp_path / "src" / "my_plugin.py").read_text()
-        assert "def build(" in content
+        assert not (tmp_path / "src" / "my_plugin.py").exists()
         assert not (tmp_path / PLUGIN_FILE).exists()
+        cfg = load_config(tmp_path)
+        assert cfg["plugin"] == "src/my_plugin.py"
 
     def test_plugin_writes_config_toml(self, tmp_path: Path):
         """--plugin writes plugin key to .konkon/config.toml."""
@@ -106,21 +106,16 @@ class TestInitProjectPlugin:
         assert cfg["plugin"] == "custom.py"
         assert cfg["log_level"] == "debug"
 
-    def test_plugin_force_overwrites_existing(self, tmp_path: Path):
-        """--plugin --force overwrites existing plugin file."""
+    def test_plugin_force_ignored(self, tmp_path: Path):
+        """--plugin with --force does not generate template; force is ignored."""
         (tmp_path / KONKON_DIR).mkdir()
         custom = tmp_path / "custom.py"
         custom.write_text("old")
         init_project(tmp_path, force=True, plugin="custom.py")
-        assert "def build(" in custom.read_text()
-
-    def test_plugin_existing_file_raises_without_force(self, tmp_path: Path):
-        """--plugin raises FileExistsError if target exists and no --force."""
-        custom = tmp_path / "custom.py"
-        custom.parent.mkdir(parents=True, exist_ok=True)
-        custom.write_text("old")
-        with pytest.raises(FileExistsError):
-            init_project(tmp_path, plugin="custom.py")
+        # Template not generated — existing file untouched
+        assert custom.read_text() == "old"
+        cfg = load_config(tmp_path)
+        assert cfg["plugin"] == "custom.py"
 
     def test_plugin_absolute_path_raises(self, tmp_path: Path):
         """Absolute path for plugin raises ValueError."""
@@ -147,25 +142,6 @@ class TestInitProjectPlugin:
         init_project(tmp_path, plugin=None)
         assert (tmp_path / PLUGIN_FILE).is_file()
         assert not (tmp_path / KONKON_DIR / CONFIG_FILE).exists()
-
-    def test_plugin_symlink_outside_project_rejected(self, tmp_path: Path):
-        """Symlink resolving outside project directory raises ValueError.
-
-        Also verifies that no directories are created as a side-effect
-        (mkdir must run AFTER the symlink check).
-        """
-        outside = tmp_path / "outside"
-        outside.mkdir()
-        project = tmp_path / "project"
-        project.mkdir()
-        # Create symlink: project/linked -> outside/
-        (project / "linked").symlink_to(outside)
-        with pytest.raises(ValueError, match="resolves outside"):
-            init_project(project, plugin="linked/evil.py")
-        # Verify no side-effects: evil.py must not exist in the outside directory
-        assert not (outside / "evil.py").exists()
-        # .konkon/ should not be created either since we failed before mkdir
-        assert not (project / KONKON_DIR).exists()
 
 
 class TestLoadConfig:
