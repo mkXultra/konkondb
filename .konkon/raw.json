@@ -1070,6 +1070,16 @@
         "file_path": "scripts/ingest-staged.sh",
         "file_hash": "40a453b40bb64456568e79f4cfd0cd991682ca1e7818cf637ad22442ba1185c9"
       }
+    },
+    {
+      "id": "019ccd75-f94b-77f1-b3ea-877ae0449706",
+      "created_at": "2026-03-08T12:39:46.763664Z",
+      "updated_at": "2026-03-08T12:39:46.763664Z",
+      "content": "## Summary\n\n<!-- Briefly describe what this PR does -->\n\n## Type of Change\n\n- [ ] feat: New feature\n- [ ] fix: Bug fix\n- [ ] refactor: Refactoring\n- [ ] docs: Documentation\n- [ ] test: Add or update tests\n- [ ] chore: Build, CI, dependencies, etc.\n\n## Changes\n\n<!-- List the main changes -->\n\n-\n\n## Test Plan\n\n- [ ] `npm run test:unit` passes\n- [ ] `npm run build` passes\n- [ ] Manual testing (if applicable)\n\n## Notes\n\n<!-- Any additional context for reviewers -->\n",
+      "meta": {
+        "file_path": ".github/pull_request_template.md",
+        "file_hash": "64d32232104368a4bf73fbfddd21693e11b13606e66bc7623c2e3e41307bbbe4"
+      }
     }
   ],
   "deletions": []
