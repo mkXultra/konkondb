@@ -66,15 +66,17 @@ class TestInitCommand:
 class TestInitPluginOption:
     """konkon init --plugin PATH — CLI integration tests."""
 
-    def test_plugin_creates_at_custom_path(self, tmp_path: Path):
-        """--plugin src/my_plugin.py → template at that path."""
+    def test_plugin_writes_config_only(self, tmp_path: Path):
+        """--plugin src/my_plugin.py → config.toml only, no template generated."""
         runner = CliRunner()
         result = runner.invoke(
             main, ["init", "--plugin", "src/my_plugin.py", str(tmp_path)]
         )
         assert result.exit_code == 0
-        assert (tmp_path / "src" / "my_plugin.py").is_file()
+        assert not (tmp_path / "src" / "my_plugin.py").exists()
         assert not (tmp_path / PLUGIN_FILE).exists()
+        cfg = load_config(tmp_path)
+        assert cfg["plugin"] == "src/my_plugin.py"
 
     def test_plugin_writes_config(self, tmp_path: Path):
         """--plugin writes to .konkon/config.toml."""
@@ -117,26 +119,6 @@ class TestInitPluginOption:
         )
         assert result.exit_code == 2
         assert "single quotes" in result.output
-
-    def test_plugin_existing_file_fails(self, tmp_path: Path):
-        """Existing plugin file without --force → exit 2."""
-        (tmp_path / "custom.py").write_text("old")
-        runner = CliRunner()
-        result = runner.invoke(
-            main, ["init", "--plugin", "custom.py", str(tmp_path)]
-        )
-        assert result.exit_code == 2
-        assert "already exists" in result.output
-
-    def test_plugin_force_overwrites(self, tmp_path: Path):
-        """--force with --plugin overwrites existing file."""
-        (tmp_path / "custom.py").write_text("old")
-        runner = CliRunner()
-        result = runner.invoke(
-            main, ["init", "--force", "--plugin", "custom.py", str(tmp_path)]
-        )
-        assert result.exit_code == 0
-        assert "def build(" in (tmp_path / "custom.py").read_text()
 
     def test_plugin_empty_string_rejected(self, tmp_path: Path):
         """Empty --plugin → exit 2."""

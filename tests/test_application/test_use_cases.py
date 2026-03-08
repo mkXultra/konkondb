@@ -60,7 +60,11 @@ class TestInit:
 
     def test_plugin_option(self, tmp_path: Path):
         init(tmp_path, plugin="plugins/my.py")
-        assert (tmp_path / "plugins" / "my.py").exists()
+        # --plugin only writes config, no template generated
+        assert not (tmp_path / "plugins" / "my.py").exists()
+        from konkon.core.instance import load_config
+        cfg = load_config(tmp_path)
+        assert cfg["plugin"] == "plugins/my.py"
 
 
 class TestInsert:
