@@ -123,10 +123,18 @@ class TestInitProjectPlugin:
         with pytest.raises(ValueError, match="relative path"):
             init_project(tmp_path, plugin="/absolute/path.py")
 
-    def test_plugin_parent_traversal_raises(self, tmp_path: Path):
-        """Path with .. raises ValueError."""
-        with pytest.raises(ValueError, match="within the project"):
-            init_project(tmp_path, plugin="../outside.py")
+    def test_plugin_parent_traversal_allowed(self, tmp_path: Path):
+        """Path with .. is allowed (project root external plugin)."""
+        # Create the plugin outside the project directory
+        parent = tmp_path / "repo"
+        project = parent / "data"
+        src = parent / "src"
+        src.mkdir(parents=True)
+        plugin_file = src / "plugin.py"
+        plugin_file.write_text("# plugin")
+        init_project(project, plugin="../src/plugin.py")
+        config = load_config(project)
+        assert config["plugin"] == "../src/plugin.py"
 
     def test_plugin_single_quote_raises(self, tmp_path: Path):
         """Path containing single quote raises ValueError."""
@@ -463,10 +471,15 @@ class TestInitProjectImportRoot:
         with pytest.raises(ValueError, match="relative"):
             init_project(tmp_path, import_root="/absolute/path")
 
-    def test_import_root_parent_traversal_rejected(self, tmp_path: Path):
-        """--import-root with .. raises ValueError."""
-        with pytest.raises(ValueError, match="within the project"):
-            init_project(tmp_path, import_root="../outside")
+    def test_import_root_parent_traversal_allowed(self, tmp_path: Path):
+        """--import-root with .. is allowed (project root external import root)."""
+        parent = tmp_path / "repo"
+        project = parent / "data"
+        src = parent / "src"
+        src.mkdir(parents=True)
+        init_project(project, import_root="../src")
+        config = load_config(project)
+        assert config["import_root"] == "../src"
 
     def test_import_root_empty_rejected(self, tmp_path: Path):
         """Empty --import-root raises ValueError."""
@@ -553,11 +566,15 @@ class TestResolvePluginSpec:
         with pytest.raises(ConfigError, match="relative path"):
             resolve_plugin_spec(tmp_path)
 
-    def test_config_import_root_parent_traversal_raises(self, tmp_path: Path):
-        """import_root with .. in config → ConfigError."""
-        from konkon.core.models import ConfigError
-        init_project(tmp_path)
-        cfg = tmp_path / KONKON_DIR / CONFIG_FILE
-        cfg.write_text("import_root = '../outside'\n")
-        with pytest.raises(ConfigError, match="within the project"):
-            resolve_plugin_spec(tmp_path)
+    def test_config_import_root_parent_traversal_allowed(self, tmp_path: Path):
+        """import_root with .. in config is allowed."""
+        parent = tmp_path / "repo"
+        project = parent / "data"
+        src = parent / "src"
+        src.mkdir(parents=True)
+        init_project(project, import_root="../src")
+        plugin_path, import_root = resolve_plugin_spec(project)
+        # import_root is project_root / "../src" (not yet resolved)
+        assert import_root == project / "../src"
+        # But it resolves to the correct directory
+        assert import_root.resolve() == src.resolve()

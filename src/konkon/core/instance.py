@@ -169,10 +169,6 @@ def _validate_plugin_arg(plugin: str) -> None:
         raise ValueError(
             f"--plugin must be a relative path (got '{plugin}')."
         )
-    if ".." in Path(plugin).parts:
-        raise ValueError(
-            f"--plugin path must be within the project directory (got '{plugin}')."
-        )
     if "'" in plugin:
         raise ValueError(
             f"--plugin path must not contain single quotes (got '{plugin}')."
@@ -189,10 +185,6 @@ def _validate_import_root_arg(import_root: str) -> None:
     if Path(import_root).is_absolute():
         raise ValueError(
             f"--import-root must be a relative path (got '{import_root}')."
-        )
-    if ".." in Path(import_root).parts:
-        raise ValueError(
-            f"--import-root path must be within the project directory (got '{import_root}')."
         )
     if "'" in import_root:
         raise ValueError(
@@ -355,16 +347,10 @@ def _resolve_import_root(project_root: Path) -> Path | None:
             f"Invalid config: 'import_root' must be a string "
             f"in .konkon/config.toml (got {type(value).__name__})"
         )
-    # Validate against the same rules as init-time (absolute path, ..)
-    p = Path(value)
-    if p.is_absolute():
+    # Validate against the same rules as init-time (absolute path)
+    if Path(value).is_absolute():
         raise ConfigError(
             f"Invalid config: 'import_root' must be a relative path "
-            f"in .konkon/config.toml (got '{value}')."
-        )
-    if ".." in p.parts:
-        raise ConfigError(
-            f"Invalid config: 'import_root' must be within the project directory "
             f"in .konkon/config.toml (got '{value}')."
         )
     resolved = project_root / value
