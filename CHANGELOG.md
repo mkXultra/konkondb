@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.4.0 (2026-03-26)
+
+### Features
+
+- --import-root オプションを追加し src/ レイアウトのプラグインをサポート
+  ([`bec1488`](https://github.com/mkXultra/konkondb/commit/bec1488abef4d53d991c560ada8d9b638f5a30a7))
+
+
 ## v0.3.1 (2026-03-08)
 
 ### Bug Fixes
