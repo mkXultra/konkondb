@@ -13,6 +13,7 @@ from konkon.core.instance import (
     init_project,
     load_config,
     resolve_plugin_path,
+    resolve_plugin_spec,
     resolve_project,
     save_config,
 )
@@ -435,3 +436,128 @@ class TestResolveProjectWithKonkonDir:
         child.mkdir(parents=True)
         with pytest.raises(FileNotFoundError, match="konkon project not found"):
             resolve_project(child)
+
+
+class TestInitProjectImportRoot:
+    """init_project with --import-root option."""
+
+    def test_import_root_writes_config(self, tmp_path: Path):
+        """--import-root writes import_root to config.toml."""
+        src = tmp_path / "src"
+        src.mkdir()
+        init_project(tmp_path, import_root="src")
+        config = load_config(tmp_path)
+        assert config["import_root"] == "src"
+
+    def test_import_root_with_plugin(self, tmp_path: Path):
+        """--import-root with --plugin writes both to config."""
+        src = tmp_path / "src"
+        src.mkdir()
+        init_project(tmp_path, plugin="src/konkon.py", import_root="src")
+        config = load_config(tmp_path)
+        assert config["plugin"] == "src/konkon.py"
+        assert config["import_root"] == "src"
+
+    def test_import_root_absolute_rejected(self, tmp_path: Path):
+        """Absolute --import-root raises ValueError."""
+        with pytest.raises(ValueError, match="relative"):
+            init_project(tmp_path, import_root="/absolute/path")
+
+    def test_import_root_parent_traversal_rejected(self, tmp_path: Path):
+        """--import-root with .. raises ValueError."""
+        with pytest.raises(ValueError, match="within the project"):
+            init_project(tmp_path, import_root="../outside")
+
+    def test_import_root_empty_rejected(self, tmp_path: Path):
+        """Empty --import-root raises ValueError."""
+        with pytest.raises(ValueError, match="non-empty"):
+            init_project(tmp_path, import_root="")
+
+    def test_import_root_single_quote_rejected(self, tmp_path: Path):
+        """--import-root with single quote raises ValueError."""
+        with pytest.raises(ValueError, match="single quotes"):
+            init_project(tmp_path, import_root="it's")
+
+    def test_import_root_nonexistent_dir_rejected(self, tmp_path: Path):
+        """--import-root pointing to non-existent directory raises ValueError."""
+        with pytest.raises(ValueError, match="does not exist"):
+            init_project(tmp_path, import_root="nonexistent")
+
+
+class TestResolvePluginSpec:
+    """resolve_plugin_spec — returns (plugin_path, import_root) tuple."""
+
+    def test_returns_import_root_from_config(self, tmp_path: Path):
+        """Config with import_root returns resolved Path."""
+        src = tmp_path / "src"
+        src.mkdir()
+        init_project(tmp_path, import_root="src")
+        plugin_path, import_root = resolve_plugin_spec(tmp_path)
+        assert plugin_path == tmp_path / PLUGIN_FILE
+        assert import_root == tmp_path / "src"
+
+    def test_returns_none_when_not_configured(self, tmp_path: Path):
+        """No import_root in config returns None."""
+        init_project(tmp_path)
+        plugin_path, import_root = resolve_plugin_spec(tmp_path)
+        assert plugin_path == tmp_path / PLUGIN_FILE
+        assert import_root is None
+
+    def test_cli_plugin_override_drops_import_root(self, tmp_path: Path):
+        """cli_plugin override → import_root is None."""
+        src = tmp_path / "src"
+        src.mkdir()
+        init_project(tmp_path, import_root="src")
+        override = tmp_path / "other_plugin.py"
+        override.write_text("# plugin")
+        plugin_path, import_root = resolve_plugin_spec(
+            tmp_path, cli_plugin=override,
+        )
+        assert plugin_path == override
+        assert import_root is None
+
+    def test_env_plugin_override_drops_import_root(self, tmp_path: Path):
+        """KONKON_PLUGIN env override → import_root is None."""
+        import os
+        src = tmp_path / "src"
+        src.mkdir()
+        init_project(tmp_path, import_root="src")
+        env_plugin = tmp_path / PLUGIN_FILE
+        old = os.environ.get("KONKON_PLUGIN")
+        try:
+            os.environ["KONKON_PLUGIN"] = str(env_plugin)
+            plugin_path, import_root = resolve_plugin_spec(tmp_path)
+            assert import_root is None
+        finally:
+            if old is None:
+                os.environ.pop("KONKON_PLUGIN", None)
+            else:
+                os.environ["KONKON_PLUGIN"] = old
+
+    def test_config_import_root_non_string_raises(self, tmp_path: Path):
+        """Non-string import_root in config → ConfigError."""
+        from konkon.core.models import ConfigError
+        init_project(tmp_path)
+        # Write invalid config manually
+        cfg = tmp_path / KONKON_DIR / CONFIG_FILE
+        cfg.write_text("import_root = 42\n")
+        with pytest.raises(ConfigError, match="must be a string"):
+            resolve_plugin_spec(tmp_path)
+
+    def test_config_import_root_absolute_raises(self, tmp_path: Path):
+        """Absolute path import_root in config → ConfigError."""
+        from konkon.core.models import ConfigError
+        init_project(tmp_path)
+        cfg = tmp_path / KONKON_DIR / CONFIG_FILE
+        cfg.write_text("import_root = '/absolute/path'\n")
+        with pytest.raises(ConfigError, match="relative path"):
+            resolve_plugin_spec(tmp_path)
+
+    def test_config_import_root_parent_traversal_raises(self, tmp_path: Path):
+        """import_root with .. in config → ConfigError."""
+        from konkon.core.models import ConfigError
+        init_project(tmp_path)
+        cfg = tmp_path / KONKON_DIR / CONFIG_FILE
+        cfg.write_text("import_root = '../outside'\n")
+        with pytest.raises(ConfigError, match="within the project"):
+            resolve_plugin_spec(tmp_path)

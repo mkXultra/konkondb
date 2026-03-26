@@ -8,6 +8,7 @@ import tomllib
 
 from konkon.application import (
     build,
+    describe,
     init,
     insert,
     migrate,
@@ -483,3 +484,48 @@ class TestMigrateRoundTrip:
             got = raw_get(tmp_path, rec.id)
             assert got is not None
             assert dict(got.meta) == dict(rec.meta)
+
+
+class TestImportRootE2E:
+    """End-to-end tests for import_root with build/describe/search."""
+
+    def _setup_src_layout(self, tmp_path: Path) -> Path:
+        """Create a src-layout project with plugin that uses package imports."""
+        # src/myapp/__init__.py + helpers.py + plugin.py
+        pkg = tmp_path / "src" / "myapp"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("")
+        (pkg / "helpers.py").write_text("ANSWER = 42\n")
+        (pkg / "plugin.py").write_text("""\
+from myapp.helpers import ANSWER
+
+def schema():
+    return {"description": "src-layout plugin", "params": {}}
+
+def build(raw_data, context):
+    pass
+
+def query(request):
+    return str(ANSWER)
+""")
+        # Initialize konkon project with import_root
+        init(tmp_path, plugin="src/myapp/plugin.py", import_root="src")
+        return tmp_path
+
+    def test_build_with_import_root(self, tmp_path: Path):
+        """build() succeeds when plugin uses package imports via import_root."""
+        project = self._setup_src_layout(tmp_path)
+        # Should not raise — plugin loads with correct sys.path
+        build(project)
+
+    def test_describe_with_import_root(self, tmp_path: Path):
+        """describe() returns schema from src-layout plugin."""
+        project = self._setup_src_layout(tmp_path)
+        schema = describe(project)
+        assert schema["description"] == "src-layout plugin"
+
+    def test_search_with_import_root(self, tmp_path: Path):
+        """search() returns result using package import from src-layout plugin."""
+        project = self._setup_src_layout(tmp_path)
+        result = search(project, "test")
+        assert result == "42"

@@ -25,11 +25,16 @@ def register(group: click.Group) -> None:
     help="Register plugin path in config (relative to DIRECTORY). No template is generated.",
 )
 @click.option(
+    "--import-root",
+    default=None,
+    help="Python import root directory (relative to DIRECTORY). Added to sys.path when loading plugin.",
+)
+@click.option(
     "--raw-backend",
     default=None,
     help="Raw DB backend ('sqlite' or 'json') [default: sqlite]",
 )
-def init(directory: str, force: bool, plugin: str | None, raw_backend: str | None) -> None:
+def init(directory: str, force: bool, plugin: str | None, import_root: str | None, raw_backend: str | None) -> None:
     """Create a konkon project in the specified directory.
 
     Creates .konkon/ directory and a konkon.py plugin template.
@@ -48,6 +53,7 @@ def init(directory: str, force: bool, plugin: str | None, raw_backend: str | Non
             Path(directory).resolve(),
             force=force,
             plugin=plugin,
+            import_root=import_root,
             raw_backend=raw_backend,
         )
     except tomllib.TOMLDecodeError as e:

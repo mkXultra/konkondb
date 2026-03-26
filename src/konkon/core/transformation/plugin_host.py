@@ -39,21 +39,31 @@ from konkon.core.models import BuildError, ConfigError, KonkonError, QueryError,
 _REQUIRED_FUNCTIONS = ("build", "query", "schema")
 
 
-def load_plugin(path: Path) -> ModuleType:
+def load_plugin(path: Path, *, import_root: Path | None = None) -> ModuleType:
     """Load a plugin module from *path* and validate the Plugin Contract.
 
     The plugin must define callable ``build()`` and ``query()`` functions.
     Raises ValueError if the contract is not satisfied.
     Raises FileNotFoundError if the file does not exist.
+
+    If *import_root* is given, it is added to sys.path instead of the
+    plugin's parent directory (exclusive).  This enables package-style
+    imports (e.g. ``from myapp.utils import ...``) when the plugin lives
+    inside a ``src/`` layout.  When *import_root* is None (default), the
+    plugin's parent directory is added for sibling-module imports.
     """
     if not path.exists():
         raise FileNotFoundError(f"Plugin file not found: {path}")
 
-    # Add plugin directory to sys.path so sibling modules (e.g. targets.py)
-    # can be imported by the plugin.
-    plugin_dir = str(path.parent.resolve())
-    if plugin_dir not in sys.path:
-        sys.path.insert(0, plugin_dir)
+    # Determine sys.path entry: import_root (package imports) or
+    # plugin parent directory (sibling imports).  Exclusive — only one
+    # is added to avoid ambiguous import resolution.
+    if import_root is not None:
+        sys_path_entry = str(import_root.resolve())
+    else:
+        sys_path_entry = str(path.parent.resolve())
+    if sys_path_entry not in sys.path:
+        sys.path.insert(0, sys_path_entry)
 
     spec = importlib.util.spec_from_file_location("konkon_plugin", str(path))
     assert spec is not None and spec.loader is not None

@@ -90,11 +90,21 @@ All three functions are required:
 
 If your plugin uses external libraries, see the [Plugin Environment Setup](docs/guide/plugin-setup.md) guide.
 
+### Using a plugin inside a `src/` layout
+
+If your plugin lives inside a Python package (e.g. `src/myapp/plugin.py`), use `--import-root` so that package imports work correctly:
+
+```bash
+konkon init --plugin src/myapp/plugin.py --import-root src
+```
+
+This tells konkondb to add `src/` to `sys.path` when loading the plugin, so `from myapp.utils import ...` works as expected. Without `--import-root`, only the plugin's parent directory is added (suitable for standalone scripts).
+
 ## CLI Commands
 
 | Command | Description |
 |---|---|
-| `konkon init [DIR]` | Create a konkon project (generates `konkon.py` template and `.konkon/` directory) |
+| `konkon init [DIR]` | Create a konkon project (generates `konkon.py` template and `.konkon/` directory). Use `--plugin` and `--import-root` for custom plugin locations |
 | `konkon insert [TEXT]` | Append text data to Raw DB (supports stdin) |
 | `konkon update ID` | Update an existing Raw Record's content or metadata |
 | `konkon build` | Run `build()` from the plugin (supports incremental builds) |

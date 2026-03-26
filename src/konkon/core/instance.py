@@ -24,6 +24,8 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+from konkon.core.models import ConfigError
+
 KONKON_DIR = ".konkon"
 RAW_DB_NAME = "raw.db"
 JSON_DB_NAME = "raw.json"
@@ -177,11 +179,33 @@ def _validate_plugin_arg(plugin: str) -> None:
         )
 
 
+def _validate_import_root_arg(import_root: str) -> None:
+    """Validate import_root argument for init_project.
+
+    Raises ValueError for invalid paths.
+    """
+    if not import_root:
+        raise ValueError("--import-root requires a non-empty path.")
+    if Path(import_root).is_absolute():
+        raise ValueError(
+            f"--import-root must be a relative path (got '{import_root}')."
+        )
+    if ".." in Path(import_root).parts:
+        raise ValueError(
+            f"--import-root path must be within the project directory (got '{import_root}')."
+        )
+    if "'" in import_root:
+        raise ValueError(
+            f"--import-root path must not contain single quotes (got '{import_root}')."
+        )
+
+
 def init_project(
     directory: Path,
     *,
     force: bool = False,
     plugin: str | None = None,
+    import_root: str | None = None,
     raw_backend: str | None = None,
 ) -> None:
     """Create a konkon project in *directory*.
@@ -201,8 +225,20 @@ def init_project(
     """
     if plugin is not None:
         _validate_plugin_arg(plugin)
+    if import_root is not None:
+        _validate_import_root_arg(import_root)
 
+    # Ensure the target directory exists so we can check import_root.
+    # directory.mkdir is idempotent (exist_ok=True) and is the only
+    # side effect before validation — .konkon/ and konkon.py are created later.
     directory.mkdir(parents=True, exist_ok=True)
+
+    if import_root is not None:
+        ir_path = directory / import_root
+        if not ir_path.is_dir():
+            raise ValueError(
+                f"--import-root directory does not exist: {ir_path}"
+            )
 
     if plugin is None:
         # Default: generate template at konkon.py
@@ -217,11 +253,17 @@ def init_project(
     if plugin is None:
         plugin_path.write_text(PLUGIN_TEMPLATE)
 
-    needs_config = plugin is not None or raw_backend is not None
+    needs_config = (
+        plugin is not None
+        or import_root is not None
+        or raw_backend is not None
+    )
     if needs_config:
         existing = load_config(directory)
         if plugin is not None:
             existing["plugin"] = plugin
+        if import_root is not None:
+            existing["import_root"] = import_root
         if raw_backend is not None:
             existing["raw_backend"] = raw_backend
         save_config(directory, existing)
@@ -296,6 +338,71 @@ def resolve_plugin_path(
             f"Plugin file not found: {resolved}"
         )
     return resolved
+
+
+def _resolve_import_root(project_root: Path) -> Path | None:
+    """Read import_root from config.toml and resolve to absolute Path.
+
+    Returns None if not configured.
+    Raises ConfigError if the configured value is invalid.
+    """
+    config = load_config(project_root)
+    value = config.get("import_root")
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ConfigError(
+            f"Invalid config: 'import_root' must be a string "
+            f"in .konkon/config.toml (got {type(value).__name__})"
+        )
+    # Validate against the same rules as init-time (absolute path, ..)
+    p = Path(value)
+    if p.is_absolute():
+        raise ConfigError(
+            f"Invalid config: 'import_root' must be a relative path "
+            f"in .konkon/config.toml (got '{value}')."
+        )
+    if ".." in p.parts:
+        raise ConfigError(
+            f"Invalid config: 'import_root' must be within the project directory "
+            f"in .konkon/config.toml (got '{value}')."
+        )
+    resolved = project_root / value
+    if not resolved.is_dir():
+        raise ConfigError(
+            f"import_root directory does not exist: {resolved}"
+        )
+    return resolved
+
+
+def resolve_plugin_spec(
+    project_root: Path,
+    *,
+    cli_plugin: Path | None = None,
+) -> tuple[Path, Path | None]:
+    """Resolve plugin path and import_root together.
+
+    Returns (plugin_path, import_root) tuple.
+
+    When the plugin is resolved via CLI arg or env var (override),
+    import_root is None — the override plugin uses its parent directory
+    for sys.path (current behaviour).  import_root from config.toml is
+    only used when the plugin itself comes from config/fallback.
+    """
+    # Priority 1 & 2: CLI / env override → import_root = None
+    if cli_plugin is not None:
+        plugin_path = resolve_plugin_path(project_root, cli_plugin=cli_plugin)
+        return plugin_path, None
+
+    env_value = os.environ.get("KONKON_PLUGIN")
+    if env_value is not None:
+        plugin_path = resolve_plugin_path(project_root)
+        return plugin_path, None
+
+    # Priority 3 & 4: config / fallback → also resolve import_root
+    plugin_path = resolve_plugin_path(project_root)
+    import_root = _resolve_import_root(project_root)
+    return plugin_path, import_root
 
 
 def raw_db_path(project_root: Path) -> Path:

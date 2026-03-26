@@ -155,3 +155,52 @@ class TestInitPluginOption:
             )
         assert result.exit_code == 3
         assert "Unsupported config value" in result.output
+
+
+class TestInitImportRootOption:
+    """konkon init --import-root — CLI tests."""
+
+    def test_import_root_writes_config(self, tmp_path: Path):
+        """--import-root src → config.toml has import_root = 'src'."""
+        (tmp_path / "src").mkdir()
+        runner = CliRunner()
+        result = runner.invoke(main, ["init", "--import-root", "src", str(tmp_path)])
+        assert result.exit_code == 0
+        config = load_config(tmp_path)
+        assert config["import_root"] == "src"
+
+    def test_import_root_with_plugin(self, tmp_path: Path):
+        """--plugin + --import-root both written to config."""
+        (tmp_path / "src").mkdir()
+        runner = CliRunner()
+        result = runner.invoke(
+            main, ["init", "--plugin", "src/konkon.py", "--import-root", "src", str(tmp_path)]
+        )
+        assert result.exit_code == 0
+        config = load_config(tmp_path)
+        assert config["plugin"] == "src/konkon.py"
+        assert config["import_root"] == "src"
+
+    def test_import_root_absolute_rejected(self, tmp_path: Path):
+        """Absolute --import-root → exit 2."""
+        runner = CliRunner()
+        result = runner.invoke(
+            main, ["init", "--import-root", "/absolute/path", str(tmp_path)]
+        )
+        assert result.exit_code == 2
+
+    def test_import_root_parent_traversal_rejected(self, tmp_path: Path):
+        """--import-root with .. → exit 2."""
+        runner = CliRunner()
+        result = runner.invoke(
+            main, ["init", "--import-root", "../outside", str(tmp_path)]
+        )
+        assert result.exit_code == 2
+
+    def test_import_root_nonexistent_rejected(self, tmp_path: Path):
+        """--import-root pointing to non-existent dir → exit 2."""
+        runner = CliRunner()
+        result = runner.invoke(
+            main, ["init", "--import-root", "nonexistent", str(tmp_path)]
+        )
+        assert result.exit_code == 2
