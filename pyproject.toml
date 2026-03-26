@@ -2,6 +2,7 @@
 name = "konkondb"
 version = "0.4.0"
 description = "AI-oriented context DB middleware — Pluggable engine between Raw Data and Context serving"
+license = "MIT"
 readme = "README.md"
 authors = [
     { name = "mkXultra", email = "electrincgoat@gmail.com" }

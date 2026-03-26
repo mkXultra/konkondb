@@ -102,14 +102,18 @@ class TestInitPluginOption:
         assert result.exit_code == 2
         assert "relative path" in result.output
 
-    def test_plugin_parent_traversal_rejected(self, tmp_path: Path):
-        """.. in path → exit 2."""
+    def test_plugin_parent_traversal_allowed(self, tmp_path: Path):
+        """.. in plugin path is allowed."""
+        parent = tmp_path / "repo"
+        project = parent / "data"
+        src = parent / "src"
+        src.mkdir(parents=True)
+        (src / "plugin.py").write_text("# plugin")
         runner = CliRunner()
         result = runner.invoke(
-            main, ["init", "--plugin", "../outside.py", str(tmp_path)]
+            main, ["init", "--plugin", "../src/plugin.py", str(project)]
         )
-        assert result.exit_code == 2
-        assert "within the project" in result.output
+        assert result.exit_code == 0
 
     def test_plugin_single_quote_rejected(self, tmp_path: Path):
         """Single quote in path → exit 2."""
@@ -189,13 +193,17 @@ class TestInitImportRootOption:
         )
         assert result.exit_code == 2
 
-    def test_import_root_parent_traversal_rejected(self, tmp_path: Path):
-        """--import-root with .. → exit 2."""
+    def test_import_root_parent_traversal_allowed(self, tmp_path: Path):
+        """--import-root with .. is allowed."""
+        parent = tmp_path / "repo"
+        project = parent / "data"
+        src = parent / "src"
+        src.mkdir(parents=True)
         runner = CliRunner()
         result = runner.invoke(
-            main, ["init", "--import-root", "../outside", str(tmp_path)]
+            main, ["init", "--import-root", "../src", str(project)]
         )
-        assert result.exit_code == 2
+        assert result.exit_code == 0
 
     def test_import_root_nonexistent_rejected(self, tmp_path: Path):
         """--import-root pointing to non-existent dir → exit 2."""

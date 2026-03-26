@@ -529,3 +529,56 @@ def query(request):
         project = self._setup_src_layout(tmp_path)
         result = search(project, "test")
         assert result == "42"
+
+
+class TestImportRootExternalE2E:
+    """E2E tests for plugin + import_root outside project root (.. paths)."""
+
+    def _setup_external_layout(self, tmp_path: Path) -> Path:
+        """Create a layout where plugin is outside project root.
+
+        repo/
+          data/          ← project root (.konkon/)
+          src/
+            mypkg/
+              __init__.py
+              helpers.py
+              plugin.py  ← plugin
+        """
+        repo = tmp_path / "repo"
+        project = repo / "data"
+        pkg = repo / "src" / "extpkg"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("")
+        (pkg / "helpers.py").write_text("EXTERNAL = 99\n")
+        (pkg / "plugin.py").write_text("""\
+from extpkg.helpers import EXTERNAL
+
+def schema():
+    return {"description": "external plugin", "params": {}}
+
+def build(raw_data, context):
+    pass
+
+def query(request):
+    return str(EXTERNAL)
+""")
+        init(project, plugin="../src/extpkg/plugin.py", import_root="../src")
+        return project
+
+    def test_build_external_plugin(self, tmp_path: Path):
+        """build() succeeds with plugin outside project root."""
+        project = self._setup_external_layout(tmp_path)
+        build(project)
+
+    def test_describe_external_plugin(self, tmp_path: Path):
+        """describe() returns schema from external plugin."""
+        project = self._setup_external_layout(tmp_path)
+        schema = describe(project)
+        assert schema["description"] == "external plugin"
+
+    def test_search_external_plugin(self, tmp_path: Path):
+        """search() returns result from external plugin using package imports."""
+        project = self._setup_external_layout(tmp_path)
+        result = search(project, "test")
+        assert result == "99"

@@ -85,14 +85,14 @@ class TestLoadPluginImportRoot:
 
     def test_import_root_enables_package_import(self, tmp_path: Path):
         """import_root allows package-style imports from src layout."""
-        # src/mypkg/__init__.py + helpers.py + plugin.py
-        pkg = tmp_path / "src" / "mypkg"
+        # src/phtest_pkg/__init__.py + helpers.py + plugin.py
+        pkg = tmp_path / "src" / "phtest_pkg"
         pkg.mkdir(parents=True)
         (pkg / "__init__.py").write_text("")
         (pkg / "helpers.py").write_text("MAGIC = 42\n")
         plugin_path = pkg / "plugin.py"
         plugin_path.write_text("""\
-from mypkg.helpers import MAGIC
+from phtest_pkg.helpers import MAGIC
 
 def schema():
     return {"description": "test", "params": {}}
@@ -126,7 +126,7 @@ def query(request):
         """import_root specified → path.parent is NOT added to sys.path."""
         import sys
         src = tmp_path / "src"
-        pkg = src / "myapp"
+        pkg = src / "phtest_excl"
         pkg.mkdir(parents=True)
         (pkg / "__init__.py").write_text("")
         plugin_path = pkg / "plugin.py"

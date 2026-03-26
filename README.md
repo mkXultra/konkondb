@@ -212,8 +212,8 @@ Requires Python >= 3.11.
 
 ## Status
 
-Alpha — under active development. API may change.
+Beta — usable for real projects. API may still evolve.
 
 ## License
 
-TBD
+MIT — see [LICENSE](LICENSE) for details.
