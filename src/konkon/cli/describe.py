@@ -8,6 +8,7 @@ import click
 
 from konkon.application import describe as app_describe
 from konkon.core.instance import resolve_project
+from konkon.core.models import ConfigError
 
 
 def register(group: click.Group) -> None:
@@ -48,7 +49,7 @@ def describe(ctx: click.Context, fmt: str | None, plugin: Path | None) -> None:
 
     try:
         schema = app_describe(project_root, plugin_override=plugin)
-    except (FileNotFoundError, ValueError, SyntaxError, ImportError) as e:
+    except (FileNotFoundError, ValueError, SyntaxError, ImportError, ConfigError) as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(3)
     except Exception as e:

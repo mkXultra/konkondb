@@ -80,6 +80,77 @@ def query(request):
             load_plugin(plugin_path)
 
 
+class TestLoadPluginImportRoot:
+    """load_plugin(path, import_root=...) — sys.path control for src layout."""
+
+    def test_import_root_enables_package_import(self, tmp_path: Path):
+        """import_root allows package-style imports from src layout."""
+        # src/mypkg/__init__.py + helpers.py + plugin.py
+        pkg = tmp_path / "src" / "mypkg"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("")
+        (pkg / "helpers.py").write_text("MAGIC = 42\n")
+        plugin_path = pkg / "plugin.py"
+        plugin_path.write_text("""\
+from mypkg.helpers import MAGIC
+
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data, context):
+    pass
+
+def query(request):
+    return str(MAGIC)
+""")
+        module = load_plugin(plugin_path, import_root=tmp_path / "src")
+        assert callable(module.query)
+
+    def test_import_root_none_uses_parent(self, tmp_path: Path):
+        """import_root=None adds path.parent to sys.path (default)."""
+        import sys
+        plugin_path = _write_plugin(tmp_path, """\
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data, context):
+    pass
+
+def query(request):
+    return ""
+""")
+        load_plugin(plugin_path)
+        assert str(tmp_path.resolve()) in sys.path
+
+    def test_import_root_excludes_parent(self, tmp_path: Path):
+        """import_root specified → path.parent is NOT added to sys.path."""
+        import sys
+        src = tmp_path / "src"
+        pkg = src / "myapp"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("")
+        plugin_path = pkg / "plugin.py"
+        plugin_path.write_text("""\
+def schema():
+    return {"description": "test", "params": {}}
+
+def build(raw_data, context):
+    pass
+
+def query(request):
+    return ""
+""")
+        # Remove parent from sys.path if present
+        parent_str = str(pkg.resolve())
+        if parent_str in sys.path:
+            sys.path.remove(parent_str)
+
+        load_plugin(plugin_path, import_root=src)
+
+        assert str(src.resolve()) in sys.path
+        assert parent_str not in sys.path
+
+
 class TestBuildContractValidation:
     """build() signature validation (06_build_context.md §3.2)."""
 

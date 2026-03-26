@@ -5,7 +5,7 @@ No business logic, no domain models, no persistence.
 
 Design decisions (implementation_plan_app_layer.md):
 - project_root is a function parameter (no state object)
-- plugin_path is resolved via resolve_plugin_path() (fixes hardcode bug)
+- plugin spec is resolved via resolve_plugin_spec() (plugin_path + import_root)
 - Exceptions propagate unchanged from Context Facades
 """
 
@@ -13,7 +13,7 @@ from pathlib import Path
 
 from konkon.core import ingestion
 from konkon.core.instance import init_project as _init_project
-from konkon.core.instance import load_config, resolve_plugin_path, save_config
+from konkon.core.instance import load_config, resolve_plugin_spec, save_config
 from konkon.core.models import JSONValue, QueryResult, RawRecord
 from konkon.core.transformation import run_build as _run_build
 from konkon.core.transformation import run_describe as _run_describe
@@ -25,13 +25,17 @@ def init(
     *,
     force: bool = False,
     plugin: str | None = None,
+    import_root: str | None = None,
     raw_backend: str | None = None,
 ) -> None:
     """Initialize a konkon project.
 
     Delegates to core.instance.init_project().
     """
-    _init_project(directory, force=force, plugin=plugin, raw_backend=raw_backend)
+    _init_project(
+        directory, force=force, plugin=plugin,
+        import_root=import_root, raw_backend=raw_backend,
+    )
 
 
 def insert(
@@ -79,16 +83,18 @@ def build(
 ) -> None:
     """Run build() from the user plugin.
 
-    Resolves plugin_path via resolve_plugin_path() (fixes hardcode bug
-    where config.toml plugin setting was ignored).
+    Resolves plugin_path and import_root via resolve_plugin_spec().
+    When plugin_override is given, import_root is None (override uses
+    its parent directory for sys.path).
     Delegates to core.transformation.run_build().
     """
-    plugin_path = (
-        plugin_override
-        if plugin_override is not None
-        else resolve_plugin_path(project_root)
-    )
-    _run_build(project_root, full=full, plugin_path=plugin_path)
+    if plugin_override is not None:
+        plugin_path = plugin_override
+        import_root = None
+    else:
+        plugin_path, import_root = resolve_plugin_spec(project_root)
+    _run_build(project_root, full=full, plugin_path=plugin_path,
+               import_root=import_root)
 
 
 def describe(
@@ -98,15 +104,16 @@ def describe(
 ) -> dict:
     """Run schema() from the user plugin.
 
-    Resolves plugin_path via resolve_plugin_path().
+    Resolves plugin_path and import_root via resolve_plugin_spec().
     Delegates to core.transformation.run_describe().
     """
-    plugin_path = (
-        plugin_override
-        if plugin_override is not None
-        else resolve_plugin_path(project_root)
-    )
-    return _run_describe(project_root, plugin_path=plugin_path)
+    if plugin_override is not None:
+        plugin_path = plugin_override
+        import_root = None
+    else:
+        plugin_path, import_root = resolve_plugin_spec(project_root)
+    return _run_describe(project_root, plugin_path=plugin_path,
+                         import_root=import_root)
 
 
 def search(
@@ -118,16 +125,16 @@ def search(
 ) -> str | QueryResult:
     """Run query() from the user plugin.
 
-    Resolves plugin_path via resolve_plugin_path() (fixes hardcode bug
-    where config.toml plugin setting was ignored).
+    Resolves plugin_path and import_root via resolve_plugin_spec().
     Delegates to core.transformation.run_query().
     """
-    plugin_path = (
-        plugin_override
-        if plugin_override is not None
-        else resolve_plugin_path(project_root)
-    )
-    return _run_query(project_root, query, params=params, plugin_path=plugin_path)
+    if plugin_override is not None:
+        plugin_path = plugin_override
+        import_root = None
+    else:
+        plugin_path, import_root = resolve_plugin_spec(project_root)
+    return _run_query(project_root, query, params=params,
+                      plugin_path=plugin_path, import_root=import_root)
 
 
 def raw_list(

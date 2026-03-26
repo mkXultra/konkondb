@@ -66,6 +66,7 @@ def run_build(
     *,
     full: bool = False,
     plugin_path: Path | None = None,
+    import_root: Path | None = None,
 ) -> None:
     """Load the user plugin and invoke build(raw_data, context).
 
@@ -82,7 +83,7 @@ def run_build(
     if plugin_path is None:
         plugin_path = project_root / "konkon.py"
 
-    plugin = load_plugin(plugin_path)
+    plugin = load_plugin(plugin_path, import_root=import_root)
 
     # Record build start time BEFORE querying data — any updates that occur
     # during the build will have updated_at >= build_start and will be picked
@@ -134,6 +135,7 @@ def run_describe(
     project_root: Path,
     *,
     plugin_path: Path | None = None,
+    import_root: Path | None = None,
 ) -> dict:
     """Load the user plugin and invoke schema().
 
@@ -143,7 +145,7 @@ def run_describe(
     if plugin_path is None:
         plugin_path = project_root / "konkon.py"
 
-    plugin = load_plugin(plugin_path)
+    plugin = load_plugin(plugin_path, import_root=import_root)
 
     # CWD guarantee: plugin runs in its own directory (§2.6)
     saved_cwd = os.getcwd()
@@ -160,6 +162,7 @@ def run_query(
     *,
     params: dict[str, str] | None = None,
     plugin_path: Path | None = None,
+    import_root: Path | None = None,
 ) -> str | QueryResult:
     """Load the user plugin and invoke query(request).
 
@@ -172,7 +175,7 @@ def run_query(
     if plugin_path is None:
         plugin_path = project_root / "konkon.py"
 
-    plugin = load_plugin(plugin_path)
+    plugin = load_plugin(plugin_path, import_root=import_root)
     request = QueryRequest(query=query_str, params=params or {})
 
     # CWD guarantee: plugin runs in its own directory (§2.6)
