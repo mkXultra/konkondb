@@ -1,12 +1,11 @@
 """konkon insert — Append text data to Raw DB (Ingestion Context)."""
 
 import sys
-from pathlib import Path
 
 import click
 
 from konkon.application import insert as app_insert
-from konkon.core.instance import resolve_project
+from konkon.cli.common import runtime_session
 from konkon.core.models import ConfigError
 
 
@@ -51,16 +50,17 @@ def insert(ctx: click.Context, text: str | None, meta: tuple[str, ...]) -> None:
             click.echo("Error: No text provided. Pass TEXT argument or pipe via stdin.", err=True)
             sys.exit(1)
 
-        # Resolve project root
-        project_dir = ctx.obj.get("project_dir") if ctx.obj else None
-        start = Path(project_dir) if project_dir else None
-        project_root = resolve_project(start)
-
         # Parse metadata
         meta_dict = _parse_meta(meta)
 
         # Delegate to Application Layer
-        record = app_insert(content, meta_dict, project_root)
+        with runtime_session(ctx, needs_connection=True, require_plugin=False) as (runtime, manager):
+            record = app_insert(
+                content,
+                meta_dict,
+                runtime=runtime,
+                connection_manager=manager,
+            )
         click.echo(record.id)
     except FileNotFoundError as e:
         click.echo(str(e), err=True)

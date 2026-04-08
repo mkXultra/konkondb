@@ -1,12 +1,11 @@
 """konkon update — Update an existing Raw Record (Ingestion Context)."""
 
 import sys
-from pathlib import Path
 
 import click
 
 from konkon.application import update as app_update
-from konkon.core.instance import resolve_project
+from konkon.cli.common import runtime_session
 from konkon.core.models import ConfigError
 
 
@@ -66,15 +65,14 @@ def update_cmd(
         sys.exit(2)
 
     try:
-        project_dir = ctx.obj.get("project_dir") if ctx.obj else None
-        start = Path(project_dir) if project_dir else None
-        project_root = resolve_project(start)
-        record = app_update(
-            record_id,
-            content=content,
-            meta=meta or None,
-            project_root=project_root,
-        )
+        with runtime_session(ctx, needs_connection=True, require_plugin=False) as (runtime, manager):
+            record = app_update(
+                record_id,
+                content=content,
+                meta=meta or None,
+                runtime=runtime,
+                connection_manager=manager,
+            )
         click.echo(record.id)
     except KeyError as e:
         click.echo(f"Error: {e}", err=True)

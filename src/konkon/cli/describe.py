@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 
 from konkon.application import describe as app_describe
-from konkon.core.instance import resolve_project
+from konkon.cli.common import runtime_session
 from konkon.core.models import ConfigError
 
 
@@ -40,16 +40,12 @@ def describe(ctx: click.Context, fmt: str | None, plugin: Path | None) -> None:
     - raw schema dict (json mode)
     """
     try:
-        project_dir = ctx.obj.get("project_dir") if ctx.obj else None
-        start = Path(project_dir) if project_dir else None
-        project_root = resolve_project(start)
+        with runtime_session(ctx, needs_connection=False) as (runtime, _manager):
+            schema = app_describe(runtime=runtime, plugin_override=plugin)
     except FileNotFoundError as e:
         click.echo(str(e), err=True)
         sys.exit(3)
-
-    try:
-        schema = app_describe(project_root, plugin_override=plugin)
-    except (FileNotFoundError, ValueError, SyntaxError, ImportError, ConfigError) as e:
+    except (ValueError, SyntaxError, ImportError, ConfigError) as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(3)
     except Exception as e:

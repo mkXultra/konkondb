@@ -1,12 +1,11 @@
 """konkon delete — Delete a Raw Record (Ingestion Context)."""
 
 import sys
-from pathlib import Path
 
 import click
 
 from konkon.application import delete as app_delete
-from konkon.core.instance import resolve_project
+from konkon.cli.common import runtime_session
 from konkon.core.models import ConfigError
 
 
@@ -46,9 +45,8 @@ def delete_cmd(
       konkon delete --force 019516a0-3b40-7f8a-b12c-4e5f6a7b8c9d
     """
     try:
-        project_dir = ctx.obj.get("project_dir") if ctx.obj else None
-        start = Path(project_dir) if project_dir else None
-        project_root = resolve_project(start)
+        with runtime_session(ctx, needs_connection=False, require_plugin=False) as (runtime, _manager):
+            pass
     except (FileNotFoundError, ConfigError) as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(3)
@@ -75,7 +73,12 @@ def delete_cmd(
         # So we proceed without prompting.
 
     try:
-        app_delete(record_id, project_root)
+        with runtime_session(ctx, needs_connection=True, require_plugin=False) as (runtime, manager):
+            app_delete(
+                record_id,
+                runtime=runtime,
+                connection_manager=manager,
+            )
         click.echo(record_id)
         click.echo(
             "[INFO] Record deleted. Run 'konkon build' to update Context Store.",

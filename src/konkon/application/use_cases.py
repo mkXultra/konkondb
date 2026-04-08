@@ -1,23 +1,58 @@
-"""Use Case functions — Application Layer (Thin Orchestrator).
+"""Application Layer use cases."""
 
-Each function delegates to the appropriate Context Facade.
-No business logic, no domain models, no persistence.
+from __future__ import annotations
 
-Design decisions (implementation_plan_app_layer.md):
-- project_root is a function parameter (no state object)
-- plugin spec is resolved via resolve_plugin_spec() (plugin_path + import_root)
-- Exceptions propagate unchanged from Context Facades
-"""
-
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any, Iterator
 
 from konkon.core import ingestion
-from konkon.core.instance import init_project as _init_project
-from konkon.core.instance import load_config, resolve_plugin_spec, save_config
-from konkon.core.models import JSONValue, QueryResult, RawRecord
+from konkon.core.instance import (
+    PostgresConnectionManager,
+    RuntimeConfig,
+    create_postgres_connection_manager,
+    init_project as _init_project,
+    load_config,
+    load_project_runtime,
+    save_config,
+)
+from konkon.core.models import JSONValue, QueryResult, RawRecord, ConfigError
 from konkon.core.transformation import run_build as _run_build
 from konkon.core.transformation import run_describe as _run_describe
 from konkon.core.transformation import run_query as _run_query
+
+
+def _resolve_runtime(
+    project_root: Path | None = None,
+    *,
+    runtime: RuntimeConfig | None = None,
+) -> RuntimeConfig:
+    if runtime is not None:
+        return runtime
+    if project_root is None:
+        raise ValueError("project_root or runtime is required")
+    return load_project_runtime(project_root)
+
+
+@contextmanager
+def _runtime_connection(
+    runtime: RuntimeConfig,
+    *,
+    connection_manager: PostgresConnectionManager | None = None,
+) -> Iterator[Any | None]:
+    if runtime.raw_backend != "postgres":
+        yield None
+        return
+
+    manager = connection_manager or create_postgres_connection_manager(runtime)
+    assert manager is not None
+    created_manager = connection_manager is None
+    try:
+        with manager.acquire() as connection:
+            yield connection
+    finally:
+        if created_manager:
+            manager.close()
 
 
 def init(
@@ -28,26 +63,35 @@ def init(
     import_root: str | None = None,
     raw_backend: str | None = None,
 ) -> None:
-    """Initialize a konkon project.
-
-    Delegates to core.instance.init_project().
-    """
+    """Initialize a konkon project."""
     _init_project(
-        directory, force=force, plugin=plugin,
-        import_root=import_root, raw_backend=raw_backend,
+        directory,
+        force=force,
+        plugin=plugin,
+        import_root=import_root,
+        raw_backend=raw_backend,
     )
 
 
 def insert(
     content: str,
     meta: dict[str, JSONValue] | None,
-    project_root: Path,
+    project_root: Path | None = None,
+    *,
+    runtime: RuntimeConfig | None = None,
+    connection_manager: PostgresConnectionManager | None = None,
 ) -> RawRecord:
-    """Insert a document into Raw DB.
-
-    Delegates to core.ingestion.ingest().
-    """
-    return ingestion.ingest(content, meta, project_root)
+    resolved_runtime = _resolve_runtime(project_root, runtime=runtime)
+    with _runtime_connection(
+        resolved_runtime,
+        connection_manager=connection_manager,
+    ) as connection:
+        return ingestion.ingest(
+            content,
+            meta,
+            runtime=resolved_runtime,
+            connection=connection,
+        )
 
 
 def update(
@@ -55,109 +99,168 @@ def update(
     *,
     content: str | None,
     meta: dict[str, JSONValue] | None,
-    project_root: Path,
+    project_root: Path | None = None,
+    runtime: RuntimeConfig | None = None,
+    connection_manager: PostgresConnectionManager | None = None,
 ) -> RawRecord:
-    """Update an existing Raw Record.
-
-    Delegates to core.ingestion.update().
-    """
-    return ingestion.update(record_id, content, meta, project_root)
+    resolved_runtime = _resolve_runtime(project_root, runtime=runtime)
+    with _runtime_connection(
+        resolved_runtime,
+        connection_manager=connection_manager,
+    ) as connection:
+        return ingestion.update(
+            record_id,
+            content,
+            meta,
+            runtime=resolved_runtime,
+            connection=connection,
+        )
 
 
 def delete(
     record_id: str,
-    project_root: Path,
+    project_root: Path | None = None,
+    *,
+    runtime: RuntimeConfig | None = None,
+    connection_manager: PostgresConnectionManager | None = None,
 ) -> None:
-    """Delete a Raw Record and create a tombstone.
-
-    Delegates to core.ingestion.delete().
-    """
-    ingestion.delete(record_id, project_root)
+    resolved_runtime = _resolve_runtime(project_root, runtime=runtime)
+    with _runtime_connection(
+        resolved_runtime,
+        connection_manager=connection_manager,
+    ) as connection:
+        ingestion.delete(
+            record_id,
+            project_root,
+            runtime=resolved_runtime,
+            connection=connection,
+        )
 
 
 def build(
-    project_root: Path,
+    project_root: Path | None = None,
     *,
     full: bool = False,
     plugin_override: Path | None = None,
+    runtime: RuntimeConfig | None = None,
+    connection_manager: PostgresConnectionManager | None = None,
 ) -> None:
-    """Run build() from the user plugin.
-
-    Resolves plugin_path and import_root via resolve_plugin_spec().
-    When plugin_override is given, import_root is None (override uses
-    its parent directory for sys.path).
-    Delegates to core.transformation.run_build().
-    """
-    if plugin_override is not None:
-        plugin_path = plugin_override
-        import_root = None
-    else:
-        plugin_path, import_root = resolve_plugin_spec(project_root)
-    _run_build(project_root, full=full, plugin_path=plugin_path,
-               import_root=import_root)
+    resolved_runtime = _resolve_runtime(project_root, runtime=runtime)
+    with _runtime_connection(
+        resolved_runtime,
+        connection_manager=connection_manager,
+    ) as connection:
+        if plugin_override is not None:
+            _run_build(
+                resolved_runtime,
+                full=full,
+                plugin_path=plugin_override,
+                import_root=None,
+                connection=connection,
+            )
+        else:
+            _run_build(
+                resolved_runtime,
+                full=full,
+                connection=connection,
+            )
 
 
 def describe(
-    project_root: Path,
+    project_root: Path | None = None,
     *,
     plugin_override: Path | None = None,
+    runtime: RuntimeConfig | None = None,
 ) -> dict:
-    """Run schema() from the user plugin.
-
-    Resolves plugin_path and import_root via resolve_plugin_spec().
-    Delegates to core.transformation.run_describe().
-    """
+    resolved_runtime = _resolve_runtime(project_root, runtime=runtime)
     if plugin_override is not None:
-        plugin_path = plugin_override
-        import_root = None
-    else:
-        plugin_path, import_root = resolve_plugin_spec(project_root)
-    return _run_describe(project_root, plugin_path=plugin_path,
-                         import_root=import_root)
+        return _run_describe(
+            resolved_runtime,
+            plugin_path=plugin_override,
+            import_root=None,
+        )
+    return _run_describe(resolved_runtime)
 
 
 def search(
-    project_root: Path,
+    project_root: Path | None,
     query: str,
     *,
     params: dict[str, str] | None = None,
     plugin_override: Path | None = None,
+    runtime: RuntimeConfig | None = None,
 ) -> str | QueryResult:
-    """Run query() from the user plugin.
-
-    Resolves plugin_path and import_root via resolve_plugin_spec().
-    Delegates to core.transformation.run_query().
-    """
+    resolved_runtime = _resolve_runtime(project_root, runtime=runtime)
     if plugin_override is not None:
-        plugin_path = plugin_override
-        import_root = None
-    else:
-        plugin_path, import_root = resolve_plugin_spec(project_root)
-    return _run_query(project_root, query, params=params,
-                      plugin_path=plugin_path, import_root=import_root)
+        return _run_query(
+            resolved_runtime,
+            query,
+            params=params,
+            plugin_path=plugin_override,
+            import_root=None,
+        )
+    return _run_query(
+        resolved_runtime,
+        query,
+        params=params,
+    )
 
 
 def raw_list(
-    project_root: Path,
+    project_root: Path | None = None,
     *,
     limit: int = 20,
+    runtime: RuntimeConfig | None = None,
+    connection_manager: PostgresConnectionManager | None = None,
 ) -> list[RawRecord]:
-    """List recent records from Raw DB.
-
-    Delegates to core.ingestion.list_records().
-    """
-    return ingestion.list_records(project_root, limit=limit)
+    resolved_runtime = _resolve_runtime(project_root, runtime=runtime)
+    with _runtime_connection(
+        resolved_runtime,
+        connection_manager=connection_manager,
+    ) as connection:
+        return ingestion.list_records(
+            project_root,
+            limit=limit,
+            runtime=resolved_runtime,
+            connection=connection,
+        )
 
 
 def raw_get(
-    project_root: Path,
+    project_root: Path | None,
     record_id: str,
+    *,
+    runtime: RuntimeConfig | None = None,
+    connection_manager: PostgresConnectionManager | None = None,
 ) -> RawRecord | None:
-    """Get a single record by ID from Raw DB.
+    resolved_runtime = _resolve_runtime(project_root, runtime=runtime)
+    with _runtime_connection(
+        resolved_runtime,
+        connection_manager=connection_manager,
+    ) as connection:
+        return ingestion.get_record(
+            project_root,
+            record_id,
+            runtime=resolved_runtime,
+            connection=connection,
+        )
 
-    Delegates to core.ingestion.get_record().
-    """
-    return ingestion.get_record(project_root, record_id)
+
+def setup_db(
+    project_root: Path | None = None,
+    *,
+    runtime: RuntimeConfig | None = None,
+    connection_manager: PostgresConnectionManager | None = None,
+) -> None:
+    resolved_runtime = _resolve_runtime(project_root, runtime=runtime)
+    if resolved_runtime.raw_backend != "postgres":
+        raise ConfigError("setup-db is only available for the postgres backend.")
+    with _runtime_connection(
+        resolved_runtime,
+        connection_manager=connection_manager,
+    ) as connection:
+        assert connection is not None
+        ingestion.setup_db(runtime=resolved_runtime, connection=connection)
 
 
 def migrate(
@@ -166,21 +269,11 @@ def migrate(
     *,
     force: bool = False,
 ) -> tuple[int, str]:
-    """Migrate Raw DB to a different backend.
-
-    Orchestrates:
-    1. Data migration (Ingestion Context)
-    2. Config update (Instance)
-
-    Returns (migrated_count, source_backend).
-    """
+    """Migrate Raw DB to a different backend."""
     count, source_backend = ingestion.migrate(
         project_root, target_backend, force=force,
     )
-
-    # Update config.toml with new backend
     config = load_config(project_root)
     config["raw_backend"] = target_backend
     save_config(project_root, config)
-
     return count, source_backend

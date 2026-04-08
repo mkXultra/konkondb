@@ -1,28 +1,22 @@
-"""Project resolution — System-level (no Bounded Context).
+"""Runtime and project resolution helpers.
 
 Responsibilities:
-- Resolve project root (find .konkon/ directory)
-- Provide paths to project resources (.konkon/raw.db, konkon.py)
-- Lazy Raw DB initialization (create on first insert, not on init)
-
-References:
-- commands/init.md (init creates .konkon/ but NOT the DB)
-- commands/insert.md (insert lazily creates DB)
-
-Used by:
-- cli/init.py — create .konkon/ and konkon.py template
-- cli/insert.py — open/create Raw DB, delegate to core/raw_db.py
-- cli/build.py — open Raw DB (read), delegate to core/plugin_host.py
-- cli/search.py — delegate to core/plugin_host.py
-- serving/api.py — same as cli but via HTTP
-- serving/mcp.py — same as cli but via MCP
+- Resolve project roots and project-mode config
+- Resolve stateless file/in-memory config into a normalized runtime config
+- Provide project resource paths for local backends
+- Resolve postgres credentials without persisting secrets
 """
 
+from __future__ import annotations
+
 import os
+import re
 import sys
 import tomllib
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator, Literal, Mapping
 
 from konkon.core.models import ConfigError
 
@@ -32,6 +26,81 @@ JSON_DB_NAME = "raw.json"
 PLUGIN_FILE = "konkon.py"
 LAST_BUILD_FILE = "last_build"
 CONFIG_FILE = "config.toml"
+
+DEFAULT_POSTGRES_SCHEMA = "public"
+DEFAULT_POSTGRES_RAW_RECORDS_TABLE = "raw_records"
+DEFAULT_POSTGRES_RAW_DELETIONS_TABLE = "raw_deletions"
+DEFAULT_POSTGRES_BUILD_STATE_TABLE = "build_state"
+DEFAULT_BUILD_STATE_KEY = "default"
+DEFAULT_POSTGRES_DSN_ENV = "KONKON_RAW_DSN"
+
+_VALID_BACKENDS = frozenset({"sqlite", "json", "postgres"})
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+@dataclass(frozen=True)
+class RuntimeConfig:
+    """Normalized runtime config for both project and stateless modes."""
+
+    mode: Literal["project", "stateless"]
+    raw_backend: str
+    backend_explicit: bool
+    plugin_path: Path
+    import_root: Path | None
+    config_base: Path
+    project_root: Path | None = None
+    config_path: Path | None = None
+    dsn_env: str | None = None
+    schema: str = DEFAULT_POSTGRES_SCHEMA
+    raw_records_table: str = DEFAULT_POSTGRES_RAW_RECORDS_TABLE
+    raw_deletions_table: str = DEFAULT_POSTGRES_RAW_DELETIONS_TABLE
+    build_state_table: str = DEFAULT_POSTGRES_BUILD_STATE_TABLE
+    build_state_key: str = DEFAULT_BUILD_STATE_KEY
+
+
+class PostgresConnectionManager:
+    """Small adapter that yields postgres connections.
+
+    A manager may wrap:
+    - an explicit connection
+    - an explicit psycopg pool
+    - a connection opened from DSN by this manager
+    """
+
+    def __init__(
+        self,
+        *,
+        connection: Any | None = None,
+        pool: Any | None = None,
+        owns_connection: bool = False,
+        owns_pool: bool = False,
+    ) -> None:
+        self._connection = connection
+        self._pool = pool
+        self._owns_connection = owns_connection
+        self._owns_pool = owns_pool
+
+    @contextmanager
+    def acquire(self) -> Iterator[Any]:
+        """Yield a usable postgres connection."""
+        if self._connection is not None:
+            yield self._connection
+            return
+        if self._pool is None:
+            raise ConfigError("Postgres connection manager is not configured.")
+        with self._pool.connection() as connection:
+            yield connection
+
+    def close(self) -> None:
+        """Close internally-owned resources."""
+        if self._owns_connection and self._connection is not None:
+            self._connection.close()
+            self._connection = None
+            self._owns_connection = False
+        if self._owns_pool and self._pool is not None:
+            self._pool.close()
+            self._pool = None
+            self._owns_pool = False
 
 PLUGIN_TEMPLATE = '''\
 """konkon plugin."""
@@ -70,6 +139,12 @@ def query(request: QueryRequest) -> str | QueryResult:
 '''
 
 
+def _load_toml_file(path: Path) -> dict[str, Any]:
+    """Load a TOML file from an arbitrary path."""
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+
 def load_config(project_root: Path) -> dict[str, Any]:
     """Load .konkon/config.toml and return the raw dict.
 
@@ -79,8 +154,7 @@ def load_config(project_root: Path) -> dict[str, Any]:
     cfg = config_path(project_root)
     if not cfg.exists():
         return {}
-    with open(cfg, "rb") as f:
-        return tomllib.load(f)
+    return _load_toml_file(cfg)
 
 
 def save_config(project_root: Path, config: dict[str, Any]) -> None:
@@ -212,7 +286,7 @@ def init_project(
     ``.konkon/config.toml`` **only** — no template file is generated.
     The *force* flag is ignored in this case.
 
-    If *raw_backend* is specified ('sqlite' or 'json'), writes it to
+    If *raw_backend* is specified ('sqlite', 'json', or 'postgres'), writes it to
     .konkon/config.toml.
     """
     if plugin is not None:
@@ -261,6 +335,30 @@ def init_project(
         save_config(directory, existing)
 
 
+def resolve_raw_backend(project_root: Path) -> tuple[str, bool]:
+    """Resolve backend type and whether it was explicitly set.
+
+    Priority: env > config > auto-detect > 'sqlite' fallback.
+    """
+    env = os.environ.get("KONKON_RAW_BACKEND")
+    if env is not None:
+        return env.lower(), True
+    config = load_config(project_root)
+    if "raw_backend" in config:
+        return str(config["raw_backend"]).lower(), True
+    db_exists = raw_db_path(project_root).exists()
+    json_exists = json_db_path(project_root).exists()
+    if db_exists and json_exists:
+        raise ConfigError(
+            "Both .konkon/raw.db and .konkon/raw.json exist. "
+            "Set 'raw_backend' in .konkon/config.toml to specify "
+            "which backend to use."
+        )
+    if json_exists and not db_exists:
+        return "json", False
+    return "sqlite", False
+
+
 def resolve_project(start: Path | None = None) -> Path:
     """Walk up from *start* to find the project root.
 
@@ -289,19 +387,8 @@ def resolve_plugin_path(
     project_root: Path,
     *,
     cli_plugin: Path | None = None,
+    require_plugin: bool = True,
 ) -> Path:
-    """Resolve the plugin file path.
-
-    Priority: CLI arg > KONKON_PLUGIN env > config.toml > fallback (konkon.py).
-
-    Raises:
-        FileNotFoundError: resolved path does not exist.
-        ValueError: config.toml 'plugin' value is not a string.
-
-    NOTE: 設計書 v5 では ConfigError を規定しているが、現時点では独自例外クラスの
-    導入を見送り ValueError で代用している。将来 build/search/serve の配線時に
-    ConfigError を導入する可能性がある。
-    """
     # Priority 1: CLI argument (already absolute)
     if cli_plugin is not None:
         resolved = cli_plugin
@@ -324,8 +411,7 @@ def resolve_plugin_path(
             else:
                 # Priority 4: Fallback
                 resolved = project_root / PLUGIN_FILE
-
-    if not resolved.exists():
+    if require_plugin and not resolved.exists():
         raise FileNotFoundError(
             f"Plugin file not found: {resolved}"
         )
@@ -365,6 +451,7 @@ def resolve_plugin_spec(
     project_root: Path,
     *,
     cli_plugin: Path | None = None,
+    require_plugin: bool = True,
 ) -> tuple[Path, Path | None]:
     """Resolve plugin path and import_root together.
 
@@ -377,16 +464,16 @@ def resolve_plugin_spec(
     """
     # Priority 1 & 2: CLI / env override → import_root = None
     if cli_plugin is not None:
-        plugin_path = resolve_plugin_path(project_root, cli_plugin=cli_plugin)
+        plugin_path = resolve_plugin_path(project_root, cli_plugin=cli_plugin, require_plugin=require_plugin)
         return plugin_path, None
 
     env_value = os.environ.get("KONKON_PLUGIN")
     if env_value is not None:
-        plugin_path = resolve_plugin_path(project_root)
+        plugin_path = resolve_plugin_path(project_root, require_plugin=require_plugin)
         return plugin_path, None
 
     # Priority 3 & 4: config / fallback → also resolve import_root
-    plugin_path = resolve_plugin_path(project_root)
+    plugin_path = resolve_plugin_path(project_root, require_plugin=require_plugin)
     import_root = _resolve_import_root(project_root)
     return plugin_path, import_root
 
@@ -404,3 +491,368 @@ def json_db_path(project_root: Path) -> Path:
 def last_build_path(project_root: Path) -> Path:
     """Return the path to the last_build timestamp file."""
     return project_root / KONKON_DIR / LAST_BUILD_FILE
+
+
+def _require_string(
+    config: Mapping[str, Any],
+    key: str,
+    *,
+    source: str,
+    allow_empty: bool = False,
+) -> str:
+    value = config.get(key)
+    if not isinstance(value, str):
+        raise ConfigError(
+            f"Invalid {source}: '{key}' must be a string "
+            f"(got {type(value).__name__ if value is not None else 'NoneType'})."
+        )
+    if not allow_empty and value == "":
+        raise ConfigError(f"Invalid {source}: '{key}' must not be empty.")
+    return value
+
+
+def _optional_string(
+    config: Mapping[str, Any],
+    key: str,
+    *,
+    source: str,
+    allow_empty: bool = False,
+) -> str | None:
+    value = config.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ConfigError(
+            f"Invalid {source}: '{key}' must be a string "
+            f"(got {type(value).__name__})."
+        )
+    if not allow_empty and value == "":
+        raise ConfigError(f"Invalid {source}: '{key}' must not be empty.")
+    return value
+
+
+def _normalize_backend(value: str, *, source: str) -> str:
+    backend = value.lower()
+    if backend not in _VALID_BACKENDS:
+        allowed = ", ".join(sorted(repr(item) for item in _VALID_BACKENDS))
+        raise ConfigError(
+            f"Unknown backend: {backend!r}. Use one of {allowed} "
+            f"({source})."
+        )
+    return backend
+
+
+def _normalize_identifier(value: str, *, key: str, source: str) -> str:
+    if not _IDENTIFIER_RE.match(value):
+        raise ConfigError(
+            f"Invalid {source}: '{key}' must be a simple SQL identifier "
+            f"(got {value!r})."
+        )
+    return value
+
+
+def _resolve_file_or_absolute_path(
+    raw_path: str,
+    *,
+    base: Path | None,
+    source: str,
+    key: str,
+) -> Path:
+    candidate = Path(raw_path)
+    if candidate.is_absolute():
+        return candidate.resolve()
+    if base is None:
+        raise ConfigError(
+            f"Invalid {source}: relative '{key}' requires 'config_base'."
+        )
+    return (base / candidate).resolve()
+
+
+def _resolve_import_root_from_path(
+    raw_path: str | None,
+    *,
+    base: Path | None,
+    source: str,
+) -> Path | None:
+    if raw_path is None:
+        return None
+    resolved = _resolve_file_or_absolute_path(
+        raw_path,
+        base=base,
+        source=source,
+        key="import_root",
+    )
+    if not resolved.is_dir():
+        raise ConfigError(f"import_root directory does not exist: {resolved}")
+    return resolved
+
+
+def _resolve_plugin_from_path(
+    raw_path: str,
+    *,
+    base: Path | None,
+    source: str,
+) -> Path:
+    resolved = _resolve_file_or_absolute_path(
+        raw_path,
+        base=base,
+        source=source,
+        key="plugin",
+    )
+    if not resolved.exists():
+        raise FileNotFoundError(f"Plugin file not found: {resolved}")
+    return resolved
+
+
+def _postgres_config_from_mapping(
+    config: Mapping[str, Any],
+    *,
+    source: str,
+) -> dict[str, str | None]:
+    dsn_env = _optional_string(config, "dsn_env", source=source)
+    schema = _optional_string(config, "schema", source=source) or DEFAULT_POSTGRES_SCHEMA
+    records_table = (
+        _optional_string(config, "raw_records_table", source=source)
+        or DEFAULT_POSTGRES_RAW_RECORDS_TABLE
+    )
+    deletions_table = (
+        _optional_string(config, "raw_deletions_table", source=source)
+        or DEFAULT_POSTGRES_RAW_DELETIONS_TABLE
+    )
+    build_state_table = (
+        _optional_string(config, "build_state_table", source=source)
+        or DEFAULT_POSTGRES_BUILD_STATE_TABLE
+    )
+    build_state_key = (
+        _optional_string(config, "build_state_key", source=source)
+        or DEFAULT_BUILD_STATE_KEY
+    )
+    return {
+        "dsn_env": dsn_env,
+        "schema": _normalize_identifier(schema, key="schema", source=source),
+        "raw_records_table": _normalize_identifier(
+            records_table, key="raw_records_table", source=source,
+        ),
+        "raw_deletions_table": _normalize_identifier(
+            deletions_table, key="raw_deletions_table", source=source,
+        ),
+        "build_state_table": _normalize_identifier(
+            build_state_table, key="build_state_table", source=source,
+        ),
+        "build_state_key": build_state_key,
+    }
+
+
+def load_project_runtime(project_root: Path, *, require_plugin: bool = True) -> RuntimeConfig:
+    """Resolve project-mode runtime config from a project root."""
+    backend, explicit = resolve_raw_backend(project_root)
+    backend = _normalize_backend(backend, source=".konkon/config.toml or KONKON_RAW_BACKEND")
+    plugin_path, import_root = resolve_plugin_spec(project_root, require_plugin=require_plugin)
+    config = load_config(project_root)
+    postgres = _postgres_config_from_mapping(
+        config,
+        source=".konkon/config.toml",
+    )
+    return RuntimeConfig(
+        mode="project",
+        project_root=project_root,
+        config_path=config_path(project_root),
+        config_base=project_root,
+        raw_backend=backend,
+        backend_explicit=explicit,
+        plugin_path=plugin_path,
+        import_root=import_root,
+        dsn_env=postgres["dsn_env"],
+        schema=str(postgres["schema"]),
+        raw_records_table=str(postgres["raw_records_table"]),
+        raw_deletions_table=str(postgres["raw_deletions_table"]),
+        build_state_table=str(postgres["build_state_table"]),
+        build_state_key=str(postgres["build_state_key"]),
+    )
+
+
+def load_runtime_config_file(path: Path, *, require_plugin: bool = True) -> RuntimeConfig:
+    """Resolve stateless runtime config from a TOML file."""
+    config = _load_toml_file(path)
+    if "config_base" in config:
+        raise ConfigError(
+            "Invalid stateless config: 'config_base' is only allowed "
+            "for in-memory config."
+        )
+    source = str(path)
+    raw_backend = _normalize_backend(
+        _require_string(config, "raw_backend", source=source),
+        source=source,
+    )
+    base = path.parent.resolve()
+    if require_plugin:
+        plugin_path = _resolve_plugin_from_path(
+            _require_string(config, "plugin", source=source),
+            base=base,
+            source=source,
+        )
+    else:
+        raw_plugin = config.get("plugin")
+        if raw_plugin is not None:
+            plugin_path = _resolve_file_or_absolute_path(
+                str(raw_plugin),
+                base=base,
+                source=source,
+                key="plugin",
+            )
+        else:
+            plugin_path = (base / PLUGIN_FILE)
+    import_root = _resolve_import_root_from_path(
+        _optional_string(config, "import_root", source=source),
+        base=base,
+        source=source,
+    )
+    postgres = _postgres_config_from_mapping(config, source=source)
+    return RuntimeConfig(
+        mode="stateless",
+        raw_backend=raw_backend,
+        backend_explicit=True,
+        plugin_path=plugin_path,
+        import_root=import_root,
+        config_base=base,
+        config_path=path.resolve(),
+        dsn_env=postgres["dsn_env"],
+        schema=str(postgres["schema"]),
+        raw_records_table=str(postgres["raw_records_table"]),
+        raw_deletions_table=str(postgres["raw_deletions_table"]),
+        build_state_table=str(postgres["build_state_table"]),
+        build_state_key=str(postgres["build_state_key"]),
+    )
+
+
+def load_runtime_config(config: Mapping[str, Any]) -> RuntimeConfig:
+    """Resolve stateless runtime config from an in-memory mapping."""
+    source = "in-memory config"
+    raw_backend = _normalize_backend(
+        _require_string(config, "raw_backend", source=source),
+        source=source,
+    )
+    raw_base = config.get("config_base")
+    base: Path | None
+    if raw_base is None:
+        base = None
+    elif isinstance(raw_base, (str, Path)):
+        base = Path(raw_base).resolve()
+    else:
+        raise ConfigError(
+            f"Invalid {source}: 'config_base' must be a string or Path "
+            f"(got {type(raw_base).__name__})."
+        )
+
+    raw_plugin = config.get("plugin")
+    if not isinstance(raw_plugin, (str, Path)):
+        raise ConfigError(
+            f"Invalid {source}: 'plugin' must be a string or Path "
+            f"(got {type(raw_plugin).__name__ if raw_plugin is not None else 'NoneType'})."
+        )
+    plugin_path = _resolve_plugin_from_path(
+        str(raw_plugin),
+        base=base,
+        source=source,
+    )
+
+    raw_import_root = config.get("import_root")
+    if raw_import_root is not None and not isinstance(raw_import_root, (str, Path)):
+        raise ConfigError(
+            f"Invalid {source}: 'import_root' must be a string or Path "
+            f"(got {type(raw_import_root).__name__})."
+        )
+    import_root = _resolve_import_root_from_path(
+        str(raw_import_root) if raw_import_root is not None else None,
+        base=base,
+        source=source,
+    )
+    postgres = _postgres_config_from_mapping(config, source=source)
+    return RuntimeConfig(
+        mode="stateless",
+        raw_backend=raw_backend,
+        backend_explicit=True,
+        plugin_path=plugin_path,
+        import_root=import_root,
+        config_base=base or plugin_path.parent,
+        dsn_env=postgres["dsn_env"],
+        schema=str(postgres["schema"]),
+        raw_records_table=str(postgres["raw_records_table"]),
+        raw_deletions_table=str(postgres["raw_deletions_table"]),
+        build_state_table=str(postgres["build_state_table"]),
+        build_state_key=str(postgres["build_state_key"]),
+    )
+
+
+def resolve_runtime(
+    *,
+    project_dir: Path | None = None,
+    config_file: Path | None = None,
+    require_plugin: bool = True,
+) -> RuntimeConfig:
+    if project_dir is not None and config_file is not None:
+        raise ConfigError(
+            "'--config' and '--project-dir' cannot be used together."
+        )
+    if config_file is not None:
+        return load_runtime_config_file(config_file.resolve(), require_plugin=require_plugin)
+    start = project_dir.resolve() if project_dir is not None else None
+    project_root = resolve_project(start)
+    return load_project_runtime(project_root, require_plugin=require_plugin)
+
+
+def _import_psycopg() -> Any:
+    """Import psycopg lazily so sqlite/json usage does not require it."""
+    try:
+        import psycopg  # type: ignore
+    except ModuleNotFoundError as exc:
+        raise ConfigError(
+            "Postgres backend requires the 'psycopg' package to be installed."
+        ) from exc
+    return psycopg
+
+
+def resolve_postgres_dsn(
+    runtime: RuntimeConfig,
+    *,
+    dsn: str | None = None,
+) -> str:
+    """Resolve a postgres DSN from explicit input or environment."""
+    if dsn:
+        return dsn
+    if runtime.dsn_env:
+        from_named_env = os.environ.get(runtime.dsn_env)
+        if from_named_env:
+            return from_named_env
+    default_env = os.environ.get(DEFAULT_POSTGRES_DSN_ENV)
+    if default_env:
+        return default_env
+    env_sources = [runtime.dsn_env] if runtime.dsn_env else []
+    env_sources.append(DEFAULT_POSTGRES_DSN_ENV)
+    joined = ", ".join(repr(item) for item in env_sources)
+    raise ConfigError(
+        "Postgres backend requires credentials. "
+        f"Provide --raw-dsn / dsn, or set one of: {joined}."
+    )
+
+
+def create_postgres_connection_manager(
+    runtime: RuntimeConfig,
+    *,
+    connection: Any | None = None,
+    pool: Any | None = None,
+    dsn: str | None = None,
+) -> PostgresConnectionManager | None:
+    """Create a postgres connection manager for a runtime when needed."""
+    if runtime.raw_backend != "postgres":
+        return None
+    if connection is not None and pool is not None:
+        raise ValueError("Specify either 'connection' or 'pool', not both.")
+    if connection is not None:
+        return PostgresConnectionManager(connection=connection)
+    if pool is not None:
+        return PostgresConnectionManager(pool=pool)
+    resolved_dsn = resolve_postgres_dsn(runtime, dsn=dsn)
+    psycopg = _import_psycopg()
+    opened = psycopg.connect(resolved_dsn)
+    return PostgresConnectionManager(connection=opened, owns_connection=True)

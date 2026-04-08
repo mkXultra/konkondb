@@ -18,7 +18,20 @@ from konkon.application.use_cases import (
     raw_get,
     raw_list,
     search,
+    setup_db,
     update,
 )
 
-__all__ = ["build", "delete", "describe", "init", "insert", "migrate", "raw_get", "raw_list", "search", "update"]
+__all__ = [
+    "build",
+    "delete",
+    "describe",
+    "init",
+    "insert",
+    "migrate",
+    "raw_get",
+    "raw_list",
+    "search",
+    "setup_db",
+    "update",
+]
