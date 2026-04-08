@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.6.0 (2026-04-08)
+
+### Features
+
+- PostgreSQLバックエンドとステートレスClient APIを追加
+  ([`f9eb238`](https://github.com/mkXultra/konkondb/commit/f9eb23879eb4c35fd8373f8a6884e561d64e6f8c))
+
+
 ## v0.5.0 (2026-03-26)
 
 
