@@ -1,12 +1,11 @@
 """konkon search — Run query() from konkon.py (Transformation Context)."""
 
 import sys
-from pathlib import Path
 
 import click
 
 from konkon.application import search as app_search
-from konkon.core.instance import resolve_project
+from konkon.cli.common import runtime_session
 from konkon.core.models import ConfigError, QueryResult
 
 
@@ -46,19 +45,21 @@ def search(ctx: click.Context, query: str, params: dict[str, str]) -> None:
     Delegates to Application Layer Use Case.
     """
     try:
-        project_dir = ctx.obj.get("project_dir") if ctx.obj else None
-        start = Path(project_dir) if project_dir else None
-        project_root = resolve_project(start)
-        result = app_search(
-            project_root,
-            query,
-            params=params or None,
-        )
+        with runtime_session(ctx, needs_connection=False) as (runtime, _manager):
+            result = app_search(
+                None,
+                query,
+                params=params or None,
+                runtime=runtime,
+            )
 
         if isinstance(result, QueryResult):
             click.echo(result.content)
         else:
             click.echo(result)
+    except FileNotFoundError as e:
+        click.echo(str(e), err=True)
+        sys.exit(1)
     except ConfigError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(3)

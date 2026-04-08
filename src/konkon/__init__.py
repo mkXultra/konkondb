@@ -10,5 +10,17 @@ from konkon.application import (
     search,
     update,
 )
+from konkon.client import Client, connect
 
-__all__ = ["build", "describe", "init", "insert", "raw_get", "raw_list", "search", "update"]
+__all__ = [
+    "Client",
+    "build",
+    "connect",
+    "describe",
+    "init",
+    "insert",
+    "raw_get",
+    "raw_list",
+    "search",
+    "update",
+]

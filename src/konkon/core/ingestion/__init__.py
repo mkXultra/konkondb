@@ -1,37 +1,23 @@
-"""Ingestion Context facade (01_conceptual_architecture.md §1.1).
+"""Ingestion Context facade."""
 
-Public API for data ingestion. Called by CLI and Serving layers.
-Internal implementation delegates to raw_db.py or json_db.py.
+from __future__ import annotations
 
-Responsibilities:
-- Insert a Document into Raw DB as a Raw Record
-- Provide RawDataAccessor for Transformation Context (ACL #1)
-- Lazy Raw DB initialization (create on first access)
-- Backend resolution (SQLite or JSON)
-
-Owns:
-- Raw DB (SQLite or JSON), ingest metadata
-
-Does NOT know about:
-- AI, vectors, context, plugins, build, query
-
-References:
-- 01_conceptual_architecture.md §1.1, §2.1, §3.1
-- 03_data_model.md (Raw DB schema)
-- json_backend_unified.md §5, §6
-- commands/insert.md
-"""
-
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from konkon.core.ingestion.backend import RawDBBackend
 from konkon.core.ingestion.json_db import JsonDB
 from konkon.core.ingestion.migration import run_migration
+from konkon.core.ingestion.postgres_db import PostgresDB, setup_postgres_db as _setup_postgres_db
 from konkon.core.ingestion.raw_db import RawDB
-from konkon.core.instance import KONKON_DIR, load_config, raw_db_path
+from konkon.core.instance import (
+    RuntimeConfig,
+    json_db_path,
+    load_project_runtime,
+    raw_db_path,
+)
 from konkon.core.models import (
     ConfigError,
     DeletedRecord,
@@ -40,55 +26,60 @@ from konkon.core.models import (
     RawRecord,
 )
 
-_JSON_DB_NAME = "raw.json"
 
+class _ManagedRawDataAccessor:
+    """Accessor wrapper that keeps the underlying backend alive."""
 
-def _json_db_path(project_root: Path) -> Path:
-    return project_root / KONKON_DIR / _JSON_DB_NAME
+    def __init__(self, backend: RawDBBackend, accessor: RawDataAccessor) -> None:
+        self._backend = backend
+        self._accessor = accessor
 
+    def __iter__(self):
+        return iter(self._accessor)
 
-def _resolve_backend(project_root: Path) -> tuple[str, bool]:
-    """Resolve backend type and whether it was explicitly set.
+    def __len__(self) -> int:
+        return len(self._accessor)
 
-    Returns (backend, explicitly_set).
-    Priority: env > config > auto-detect > 'sqlite' fallback.
-    """
-    env = os.environ.get("KONKON_RAW_BACKEND")
-    if env is not None:
-        return env.lower(), True
-    config = load_config(project_root)
-    if "raw_backend" in config:
-        return str(config["raw_backend"]).lower(), True
-    # Limited auto-detect: only when env/config are both unset
-    db_exists = raw_db_path(project_root).exists()
-    json_exists = _json_db_path(project_root).exists()
-    if db_exists and json_exists:
-        raise ConfigError(
-            "Both .konkon/raw.db and .konkon/raw.json exist. "
-            "Set 'raw_backend' in .konkon/config.toml to specify "
-            "which backend to use."
+    def since(self, timestamp: datetime) -> _ManagedRawDataAccessor:
+        return _ManagedRawDataAccessor(
+            self._backend,
+            self._accessor.since(timestamp),
         )
-    if json_exists and not db_exists:
-        return "json", False
-    return "sqlite", False  # default (includes db-only and neither-exists)
+
+    def modified_since(self, timestamp: datetime) -> _ManagedRawDataAccessor:
+        accessor = getattr(self._accessor, "modified_since")(timestamp)
+        return _ManagedRawDataAccessor(self._backend, accessor)
+
+    def close(self) -> None:
+        self._backend.close()
 
 
-def _check_backend_consistency(
-    project_root: Path, backend: str, explicit: bool
-) -> None:
-    """Warn about mismatch between explicit config and existing files."""
-    if not explicit:
-        return  # auto-detect handles its own consistency
-    db_exists = raw_db_path(project_root).exists()
-    json_exists = _json_db_path(project_root).exists()
+def _coerce_runtime(
+    project_root: Path | None = None,
+    *,
+    runtime: RuntimeConfig | None = None,
+) -> RuntimeConfig:
+    if runtime is not None:
+        return runtime
+    if project_root is None:
+        raise ValueError("project_root or runtime is required")
+    return load_project_runtime(project_root)
 
-    if backend == "json" and db_exists and not json_exists:
+
+def _check_backend_consistency(runtime: RuntimeConfig) -> None:
+    """Warn about mismatches for explicit project-mode local backends."""
+    if not runtime.backend_explicit or runtime.project_root is None:
+        return
+    db_exists = raw_db_path(runtime.project_root).exists()
+    json_exists = json_db_path(runtime.project_root).exists()
+
+    if runtime.raw_backend == "json" and db_exists and not json_exists:
         print(
             "[WARN] .konkon/raw.db exists but backend is 'json'. "
             "A new raw.json will be created.",
             file=sys.stderr,
         )
-    elif backend == "sqlite" and json_exists and not db_exists:
+    elif runtime.raw_backend == "sqlite" and json_exists and not db_exists:
         print(
             "[WARN] .konkon/raw.json exists but backend is 'sqlite'. "
             "A new raw.db will be created.",
@@ -96,42 +87,53 @@ def _check_backend_consistency(
         )
 
 
-def _open_db(project_root: Path) -> RawDBBackend:
-    """Open (or lazily create) the appropriate Raw DB backend."""
-    backend, explicit = _resolve_backend(project_root)
-    if backend not in ("sqlite", "json"):
+def _open_db(
+    runtime: RuntimeConfig,
+    *,
+    connection: Any | None = None,
+) -> RawDBBackend:
+    """Open the configured raw backend."""
+    backend = runtime.raw_backend
+    if backend not in ("sqlite", "json", "postgres"):
         raise ConfigError(
-            f"Unknown backend: {backend!r}. Use 'sqlite' or 'json'."
+            f"Unknown backend: {backend!r}. Use 'sqlite', 'json', or 'postgres'."
         )
-    _check_backend_consistency(project_root, backend, explicit)
-    if backend == "json":
-        return JsonDB(_json_db_path(project_root))
-    return RawDB(raw_db_path(project_root))
+    if backend in ("sqlite", "json"):
+        if runtime.project_root is None:
+            raise ConfigError(
+                "Stateless mode currently requires the postgres backend."
+            )
+        _check_backend_consistency(runtime)
+        if backend == "json":
+            return JsonDB(json_db_path(runtime.project_root))
+        return RawDB(raw_db_path(runtime.project_root))
+
+    if connection is None:
+        raise ConfigError("Postgres backend requires an active connection.")
+    return PostgresDB(connection, runtime)
 
 
-def _db_file_exists(project_root: Path) -> bool:
-    """Check if the configured backend's DB file exists."""
-    backend, _ = _resolve_backend(project_root)
-    if backend not in ("sqlite", "json"):
-        raise ConfigError(
-            f"Unknown backend: {backend!r}. Use 'sqlite' or 'json'."
-        )
-    if backend == "json":
-        return _json_db_path(project_root).exists()
-    return raw_db_path(project_root).exists()
+def _backend_exists(runtime: RuntimeConfig) -> bool:
+    """Return whether a read-only operation should attempt backend access."""
+    if runtime.raw_backend == "postgres":
+        return True
+    if runtime.project_root is None:
+        return False
+    if runtime.raw_backend == "json":
+        return json_db_path(runtime.project_root).exists()
+    return raw_db_path(runtime.project_root).exists()
 
 
 def ingest(
     content: str,
     meta: dict[str, JSONValue] | None,
-    project_root: Path,
+    project_root: Path | None = None,
+    *,
+    runtime: RuntimeConfig | None = None,
+    connection: Any | None = None,
 ) -> RawRecord:
-    """Ingest a document into Raw DB as a Raw Record.
-
-    Opens (or lazily creates) the Raw DB, delegates to backend.insert(),
-    and returns the resulting RawRecord.
-    """
-    db = _open_db(project_root)
+    runtime = _coerce_runtime(project_root, runtime=runtime)
+    db = _open_db(runtime, connection=connection)
     try:
         return db.insert(content, meta)
     finally:
@@ -142,13 +144,13 @@ def update(
     record_id: str,
     content: str | None,
     meta: dict[str, JSONValue] | None,
-    project_root: Path,
+    project_root: Path | None = None,
+    *,
+    runtime: RuntimeConfig | None = None,
+    connection: Any | None = None,
 ) -> RawRecord:
-    """Update an existing Raw Record's content and/or meta.
-
-    Raises KeyError if record_id is not found.
-    """
-    db = _open_db(project_root)
+    runtime = _coerce_runtime(project_root, runtime=runtime)
+    db = _open_db(runtime, connection=connection)
     try:
         return db.update(record_id, content=content, meta=meta)
     finally:
@@ -156,17 +158,16 @@ def update(
 
 
 def get_record(
-    project_root: Path,
+    project_root: Path | None,
     record_id: str,
+    *,
+    runtime: RuntimeConfig | None = None,
+    connection: Any | None = None,
 ) -> RawRecord | None:
-    """Return a single record by ID, or None if not found.
-
-    Returns None if the Raw DB file does not exist yet
-    (read-only command must not create the DB).
-    """
-    if not _db_file_exists(project_root):
+    runtime = _coerce_runtime(project_root, runtime=runtime)
+    if not _backend_exists(runtime):
         return None
-    db = _open_db(project_root)
+    db = _open_db(runtime, connection=connection)
     try:
         return db.get_record(record_id)
     finally:
@@ -174,17 +175,16 @@ def get_record(
 
 
 def list_records(
-    project_root: Path,
+    project_root: Path | None,
     limit: int = 20,
+    *,
+    runtime: RuntimeConfig | None = None,
+    connection: Any | None = None,
 ) -> list[RawRecord]:
-    """Return up to *limit* recent records from the Raw DB (newest first).
-
-    Returns an empty list if the Raw DB file does not exist yet
-    (read-only command must not create the DB).
-    """
-    if not _db_file_exists(project_root):
+    runtime = _coerce_runtime(project_root, runtime=runtime)
+    if not _backend_exists(runtime):
         return []
-    db = _open_db(project_root)
+    db = _open_db(runtime, connection=connection)
     try:
         return db.list_records(limit)
     finally:
@@ -192,33 +192,31 @@ def list_records(
 
 
 def get_accessor(
-    project_root: Path,
+    project_root: Path | None = None,
     modified_since: datetime | None = None,
+    *,
+    runtime: RuntimeConfig | None = None,
+    connection: Any | None = None,
 ) -> RawDataAccessor:
-    """Return a RawDataAccessor over records in the Raw DB.
-
-    If *modified_since* is given, the accessor is pre-filtered to records
-    whose ``updated_at`` is after that timestamp (for incremental builds).
-    This keeps the ``modified_since()`` call inside Ingestion Context,
-    so Transformation Context never touches a non-Protocol method.
-
-    The Raw DB must already exist (raises if not).
-    """
-    db = _open_db(project_root)
+    runtime = _coerce_runtime(project_root, runtime=runtime)
+    db = _open_db(runtime, connection=connection)
     accessor = db.accessor()
     if modified_since is not None:
-        accessor = accessor.modified_since(modified_since)
-    return accessor
+        accessor = getattr(accessor, "modified_since")(modified_since)
+    return _ManagedRawDataAccessor(db, accessor)
 
 
-def delete(record_id: str, project_root: Path) -> None:
-    """Delete a record and create a tombstone.
-
-    Raises KeyError if not found. Does NOT create DB if missing.
-    """
-    if not _db_file_exists(project_root):
+def delete(
+    record_id: str,
+    project_root: Path | None,
+    *,
+    runtime: RuntimeConfig | None = None,
+    connection: Any | None = None,
+) -> None:
+    runtime = _coerce_runtime(project_root, runtime=runtime)
+    if not _backend_exists(runtime):
         raise KeyError(f"record not found: {record_id}")
-    db = _open_db(project_root)
+    db = _open_db(runtime, connection=connection)
     try:
         db.delete(record_id)
     finally:
@@ -226,27 +224,52 @@ def delete(record_id: str, project_root: Path) -> None:
 
 
 def get_deleted_records_since(
-    project_root: Path, since: datetime
+    project_root: Path | None,
+    since: datetime,
+    *,
+    runtime: RuntimeConfig | None = None,
+    connection: Any | None = None,
 ) -> list[DeletedRecord]:
-    """Return DeletedRecords deleted after timestamp. Empty list if DB missing."""
-    if not _db_file_exists(project_root):
+    runtime = _coerce_runtime(project_root, runtime=runtime)
+    if not _backend_exists(runtime):
         return []
-    db = _open_db(project_root)
+    db = _open_db(runtime, connection=connection)
     try:
         return db.get_deleted_records_since(since)
     finally:
         db.close()
 
 
-def purge_tombstones(project_root: Path, before: datetime) -> int:
-    """Remove old tombstones. Returns 0 if DB missing."""
-    if not _db_file_exists(project_root):
+def purge_tombstones(
+    project_root: Path | None,
+    before: datetime,
+    *,
+    runtime: RuntimeConfig | None = None,
+    connection: Any | None = None,
+) -> int:
+    runtime = _coerce_runtime(project_root, runtime=runtime)
+    if not _backend_exists(runtime):
         return 0
-    db = _open_db(project_root)
+    db = _open_db(runtime, connection=connection)
     try:
         return db.purge_tombstones(before)
     finally:
         db.close()
+
+
+def setup_db(
+    project_root: Path | None = None,
+    *,
+    runtime: RuntimeConfig | None = None,
+    connection: Any | None = None,
+) -> None:
+    """Bootstrap postgres schema/tables."""
+    resolved_runtime = _coerce_runtime(project_root, runtime=runtime)
+    if resolved_runtime.raw_backend != "postgres":
+        raise ConfigError("setup-db is only available for the postgres backend.")
+    if connection is None:
+        raise ConfigError("Postgres backend requires an active connection.")
+    _setup_postgres_db(connection, resolved_runtime)
 
 
 def migrate(
@@ -255,37 +278,30 @@ def migrate(
     *,
     force: bool = False,
 ) -> tuple[int, str]:
-    """Migrate all records from current backend to target backend.
-
-    Returns (migrated_count, source_backend).
-    Raises ConfigError for validation failures.
-
-    Does NOT update config.toml (caller's responsibility).
-    """
-    # 1. Validate target_backend
+    """Migrate all records from current backend to target backend."""
     if target_backend not in ("sqlite", "json"):
         raise ConfigError(
             f"Unknown backend: {target_backend!r}. Use 'sqlite' or 'json'."
         )
 
-    # 2. Resolve current backend
-    current_backend, _ = _resolve_backend(project_root)
+    runtime = load_project_runtime(project_root, require_plugin=False)
+    current_backend = runtime.raw_backend
+    if current_backend == "postgres":
+        raise ConfigError("Migration from postgres is not supported yet.")
     if current_backend == target_backend:
         raise ConfigError(
             f"Already using {current_backend!r} backend. Nothing to migrate."
         )
 
-    # 3. Validate source exists
-    if not _db_file_exists(project_root):
+    if not _backend_exists(runtime):
         src_name = "raw.db" if current_backend == "sqlite" else "raw.json"
         raise ConfigError(
             f"Source database .konkon/{src_name} does not exist. "
-            f"Nothing to migrate."
+            "Nothing to migrate."
         )
 
-    # 4. Validate target does not exist (or --force)
     target_path = (
-        _json_db_path(project_root) if target_backend == "json"
+        json_db_path(project_root) if target_backend == "json"
         else raw_db_path(project_root)
     )
     if target_path.exists():
@@ -299,16 +315,15 @@ def migrate(
             file=sys.stderr,
         )
         target_path.unlink()
-        # SQLite WAL mode may leave auxiliary files (03_data_model.md §8)
         if target_backend == "sqlite":
             for suffix in ("-wal", "-shm"):
                 aux = target_path.parent / (target_path.name + suffix)
                 if aux.exists():
                     aux.unlink()
 
-    # 5. Execute migration
-    source = _open_db(project_root)
+    source = _open_db(runtime)
     try:
+        target: RawDBBackend
         if target_backend == "json":
             target = JsonDB(target_path)
         else:

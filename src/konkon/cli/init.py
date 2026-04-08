@@ -8,7 +8,7 @@ import click
 
 from konkon.application import init as app_init
 
-_VALID_BACKENDS = ("sqlite", "json")
+_VALID_BACKENDS = ("sqlite", "json", "postgres")
 
 
 def register(group: click.Group) -> None:
@@ -32,7 +32,7 @@ def register(group: click.Group) -> None:
 @click.option(
     "--raw-backend",
     default=None,
-    help="Raw DB backend ('sqlite' or 'json') [default: sqlite]",
+    help="Raw DB backend ('sqlite', 'json', or 'postgres') [default: sqlite]",
 )
 def init(directory: str, force: bool, plugin: str | None, import_root: str | None, raw_backend: str | None) -> None:
     """Create a konkon project in the specified directory.

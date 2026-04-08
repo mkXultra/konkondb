@@ -9,7 +9,19 @@ import sys
 
 import click
 
-from konkon.cli import build, delete, describe, init, insert, migrate, raw, search, serve, update
+from konkon.cli import (
+    build,
+    delete,
+    describe,
+    init,
+    insert,
+    migrate,
+    raw,
+    search,
+    serve,
+    setup_db,
+    update,
+)
 
 
 @click.group(invoke_without_command=True, context_settings={"max_content_width": 120})
@@ -19,15 +31,38 @@ from konkon.cli import build, delete, describe, init, insert, migrate, raw, sear
     default=None,
     help="Project root directory (default: auto-detect from cwd).",
 )
+@click.option(
+    "--config",
+    "config_file",
+    type=click.Path(exists=True, dir_okay=False),
+    default=None,
+    help="Stateless config TOML path.",
+)
+@click.option(
+    "--raw-dsn",
+    default=None,
+    help="Explicit postgres DSN override.",
+)
 @click.pass_context
-def main(ctx: click.Context, project_dir: str | None) -> None:
+def main(
+    ctx: click.Context,
+    project_dir: str | None,
+    config_file: str | None,
+    raw_dsn: str | None,
+) -> None:
     """konkon db — Store raw data, transform with plugins, and serve AI-ready context.
 
     \b
     Workflow: init → insert → build → search
     """
+    if project_dir is not None and config_file is not None:
+        raise click.UsageError(
+            "'--config' and '--project-dir' cannot be used together."
+        )
     ctx.ensure_object(dict)
     ctx.obj["project_dir"] = project_dir
+    ctx.obj["config_file"] = config_file
+    ctx.obj["raw_dsn"] = raw_dsn
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 
@@ -68,3 +103,4 @@ update.register(main)
 migrate.register(main)
 raw.register(main)
 serve.register(main)
+setup_db.register(main)

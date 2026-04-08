@@ -210,6 +210,19 @@ uv run tach check
 
 Requires Python >= 3.11.
 
+Live Postgres integration test:
+
+```bash
+# Install dev deps plus the optional postgres runtime deps
+uv sync --group dev --extra postgres
+
+# Run the real-Postgres CLI workflow test with Docker/Testcontainers
+KONKON_RUN_PG_LIVE=1 uv run pytest -q tests/integration/test_postgres_live.py
+```
+
+The live test is skipped by default. It requires Docker to be available to
+Testcontainers and `KONKON_RUN_PG_LIVE=1` to be set explicitly.
+
 ## Status
 
 Beta — usable for real projects. API may still evolve.

@@ -24,11 +24,15 @@ packages = ["src/konkon"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "postgres_live: real Postgres integration tests requiring Docker and KONKON_RUN_PG_LIVE=1",
+]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "tach>=0.33.4",
+    "testcontainers>=4.0",
 ]
 
 [tool.semantic_release]
@@ -44,3 +48,6 @@ build_command = """
 
 [tool.semantic_release.branches.main]
 match = "main"
+
+[project.optional-dependencies]
+postgres = ['psycopg>=3.2', 'psycopg-pool>=3.2']

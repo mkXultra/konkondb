@@ -53,7 +53,15 @@ depends_on = [
 path = "konkon"
 layer = "cli"
 utility = true
-depends_on = ["konkon.application"]
+depends_on = ["konkon.application", "konkon.client"]
+
+[[modules]]
+path = "konkon.client"
+layer = "cli"
+depends_on = [
+    "konkon.application",
+    "konkon.core.instance",
+]
 
 # Shared types — importable by all without declaration
 [[modules]]
@@ -83,6 +91,7 @@ depends_on = [
     "konkon.core.ingestion.backend",
     "konkon.core.ingestion.raw_db",
     "konkon.core.ingestion.json_db",
+    "konkon.core.ingestion.postgres_db",
     "konkon.core.ingestion.migration",
     "konkon.core.instance",
 ]
@@ -95,6 +104,9 @@ visibility = [
     "konkon.core.ingestion",
     "konkon.core.ingestion.raw_db",
     "konkon.core.ingestion.json_db",
+    "konkon.core.ingestion.postgres_db",
+    "konkon.core.state.local_state",
+    "konkon.core.state.postgres_state",
 ]
 depends_on = []
 
@@ -118,6 +130,18 @@ visibility = [
 ]
 depends_on = ["konkon.core.ingestion.backend"]
 
+[[modules]]
+path = "konkon.core.ingestion.postgres_db"
+layer = "core"
+visibility = [
+    "konkon.core.ingestion",
+    "konkon.core.state.postgres_state",
+]
+depends_on = [
+    "konkon.core.ingestion.backend",
+    "konkon.core.instance",
+]
+
 # Migration logic — only ingestion facade can access
 [[modules]]
 path = "konkon.core.ingestion.migration"
@@ -128,11 +152,52 @@ depends_on = [
     "konkon.core.ingestion.json_db",
 ]
 
+[[modules]]
+path = "konkon.core.state"
+layer = "core"
+depends_on = [
+    "konkon.core.instance",
+    "konkon.core.state.base",
+    "konkon.core.state.local_state",
+    "konkon.core.state.postgres_state",
+]
+
+[[modules]]
+path = "konkon.core.state.base"
+layer = "core"
+utility = true
+depends_on = []
+
+[[modules]]
+path = "konkon.core.state.local_state"
+layer = "core"
+visibility = ["konkon.core.state"]
+depends_on = [
+    "konkon.core.ingestion.backend",
+    "konkon.core.state.base",
+]
+
+[[modules]]
+path = "konkon.core.state.postgres_state"
+layer = "core"
+visibility = ["konkon.core.state"]
+depends_on = [
+    "konkon.core.ingestion.backend",
+    "konkon.core.ingestion.postgres_db",
+    "konkon.core.instance",
+    "konkon.core.state.base",
+]
+
 # Transformation Context facade
 [[modules]]
 path = "konkon.core.transformation"
 layer = "core"
-depends_on = ["konkon.core.transformation.plugin_host", "konkon.core.ingestion", "konkon.core.instance"]
+depends_on = [
+    "konkon.core.transformation.plugin_host",
+    "konkon.core.ingestion",
+    "konkon.core.instance",
+    "konkon.core.state",
+]
 
 # Plugin Host — only transformation facade can access
 [[modules]]
